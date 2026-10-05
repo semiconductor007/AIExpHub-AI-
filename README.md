@@ -18,9 +18,9 @@
 
 ## 当前开发阶段
 
-阶段 1：项目初始化与需求边界。
+阶段 1 已完成。当前为阶段 2：领域模型与业务规则定稿。
 
-当前已建立基础目录、忽略规则、[需求边界](docs/requirements.md)和[阶段开发计划](docs/development-plan.md)。前后端目录仅包含占位文件，尚未生成框架工程、安装依赖或实现业务功能，当前没有可运行的 Web 应用。
+当前已建立基础目录、忽略规则、[需求边界](docs/requirements.md)、[阶段开发计划](docs/development-plan.md)、[领域模型](docs/domain-model.md)和[业务校验规则](docs/validation-rules.md)。前后端目录仅包含占位文件，尚未生成框架工程、安装依赖或实现业务功能，当前没有可运行的 Web 应用。
 
 ## 基础目录结构
 
@@ -32,7 +32,9 @@ AIExpHub/
 │   └── .gitkeep
 ├── docs/
 │   ├── requirements.md      # 已确认需求、业务规则与待确认事项
-│   └── development-plan.md  # 各阶段目标、产物与验收方式
+│   ├── development-plan.md  # 各阶段目标、产物与验收方式
+│   ├── domain-model.md      # 四个核心实体与关系
+│   └── validation-rules.md  # 校验规则与预期异常语义
 ├── README.md
 └── .gitignore
 ```
