@@ -8,9 +8,9 @@
 
 | 用途 | 技术 |
 | --- | --- |
-| 前端 | Vue 3 + Vite + TypeScript |
-| UI | Element Plus |
-| 图表 | ECharts |
+| 前端 | Vue 3 + Vite + TypeScript，Vue Router，Axios（基础工程已初始化） |
+| UI | Element Plus（当前全量注册） |
+| 图表 | ECharts（计划采用，尚未安装） |
 | 后端 | Python 3.12 + FastAPI + Uvicorn + Pydantic v2 |
 | ORM | SQLAlchemy 2.x（已建立四个业务模型与数据库约束） |
 | 数据库 | SQLite |
@@ -18,9 +18,9 @@
 
 ## 当前开发阶段
 
-阶段 1、阶段 2、阶段 2.5、阶段 3A、阶段 3B、阶段 3C、阶段 3D、阶段 3E、阶段 3F 已完成。当前为阶段 4A：多实验比较 API。完成本阶段后停止，阶段 4B 的范围等待后续指令。
+阶段 1、阶段 2、阶段 2.5、阶段 3A、阶段 3B、阶段 3C、阶段 3D、阶段 3E、阶段 3F、阶段 4A 已完成。当前为阶段 4B：前端基础工程与 API 通信。完成本阶段后停止，后续业务页面等待下一阶段指令。
 
-后端提供 `/health` 健康检查、Project、ExperimentBatch 和 Experiment CRUD API，以及 ExperimentResult 首次录入、查询和完整更新 API、多实验比较 API、对应的 Pydantic Schema 与请求级数据库 Session。四个 ORM 模型和业务表已建立，核心 API、数据库约束及比较规则已通过 pytest 自动验收；统计、图表及前端功能尚未实现，当前没有认证或迁移工具。
+后端提供 `/health` 健康检查、Project、ExperimentBatch 和 Experiment CRUD API，以及 ExperimentResult 首次录入、查询和完整更新 API、多实验比较 API、对应的 Pydantic Schema 与请求级数据库 Session。四个 ORM 模型和业务表已建立，核心 API、数据库约束及比较规则已通过 pytest 自动验收。前端目前只有应用外壳、首页路由和后端健康状态卡片；Project / Batch / Experiment / Result / Compare 业务页面、统计及图表尚未实现，当前没有认证或迁移工具。
 
 已确认业务设计保留在 [需求边界](docs/requirements.md)、[领域模型](docs/domain-model.md)和[业务校验规则](docs/validation-rules.md)中，阶段安排见 [阶段开发计划](docs/development-plan.md)。
 
@@ -60,6 +60,31 @@ python -m venv .venv
 `/health` 每次请求通过数据库会话执行 `SELECT 1`。成功返回 HTTP 200 和 `{"status":"ok","service":"AIExpHub API"}`；数据库连接失败返回 HTTP 503。按 `Ctrl+C` 停止服务。
 
 SQLite 路径由 `app/database.py` 的实际位置计算，固定为 `backend/data/aiexphub.db`，不受启动时当前目录影响。`.venv`、Python 缓存及数据库文件均由现有 `.gitignore` 忽略。
+
+## 前端安装与启动
+
+工程使用官方 create-vite 的 vue-ts 模板初始化，直接位于 `frontend/`。本工作区验证环境为 Node v24.15.0、npm 11.12.1；所选 Vite 8 要求 Node 20.19+ 或 22.12+，参见 [Vite 官方初始化说明](https://vite.dev/guide/)。无需安装全局前端工具。
+
+先在一个终端按上文启动 FastAPI（`127.0.0.1:8000`），再在另一个终端从项目根目录执行：
+
+```powershell
+cd frontend
+npm install
+npm run dev
+```
+
+按 Vite 输出的实际地址访问，默认是 `http://localhost:5173`。本阶段实际联调使用 `http://127.0.0.1:5173`。保留并提交 package-lock.json；需要严格按锁文件重新安装时可使用 `npm ci`。
+
+Vue Router 当前只有 `/` 首页。页面加载自动检测后端，显示连接中、服务正常和服务名称，或后端服务不可用；“重新检测”可在后端停止、恢复后更新状态，检测过程中禁用重复点击。
+
+所有 API 调用通过统一 Axios client（baseURL=`/api`，timeout=10000ms），HealthResponse 和 getHealth() 有明确类型。Vite 开发代理将 `/api` 请求转发至 `http://127.0.0.1:8000` 并移除前缀，例如 `/api/health` → `/health`，参见 [Vite proxy 文档](https://vite.dev/config/server-options.html#server-proxy)。浏览器始终请求前端同源路径，后端没有添加 CORS，未加入认证拦截器、重试或缓存；部署配置留待后续确定。
+
+```powershell
+npm run build
+npm run preview
+```
+
+build 执行 `vue-tsc -b && vite build`，先类型检查，再生成 `frontend/dist/`。Element Plus 按本阶段要求全量注册，构建有大于 500 kB 的 JS chunk 提示，构建成功；没有添加按需导入或包优化插件。node_modules、dist 和 TS 构建缓存均由根目录 .gitignore 忽略。
 
 ## 后端测试
 
@@ -103,6 +128,8 @@ SQLite 路径由 `app/database.py` 的实际位置计算，固定为 `backend/da
 
 阶段 4A 的 102 个 pytest 全部通过（原 60 个 + 比较 42 个）。真实启动 Uvicorn，使用两个项目、三个批次、四个实验验证跨项目比较、部分指标、无结果、并列最优和 loss 最小；PUT 修改 accuracy 后再次比较立即更新最佳实验。HTTP 验证数据已清理，四张表记录数均为 0，服务已停止。自动测试使用隔离数据库，真实 HTTP 验证按要求使用本地运行数据库并在结束后清理。
 
+阶段 4B 已通过真实浏览器联调：前后端同时启动时首页和 `/api/health` 正常；停止后端再检测显示不可用且页面未崩溃；重新启动后端再检测恢复正常。类型检查与前端构建成功，后端 102 个 pytest 保持通过。后端生产代码和冻结规则未修改；健康检查未写入业务数据。
+
 ## 基础目录结构
 
 ```text
@@ -135,8 +162,25 @@ AIExpHub/
 │   ├── pytest.ini
 │   ├── requirements-dev.txt
 │   └── requirements.txt
-├── frontend/                # 前端工程预留目录
-│   └── .gitkeep
+├── frontend/                # 基础首页与 API 通信工程
+│   ├── src/
+│   │   ├── api/
+│   │   │   ├── client.ts
+│   │   │   └── health.ts
+│   │   ├── router/
+│   │   │   └── index.ts
+│   │   ├── views/
+│   │   │   └── HomeView.vue
+│   │   ├── App.vue
+│   │   ├── main.ts
+│   │   └── style.css
+│   ├── index.html
+│   ├── package.json
+│   ├── package-lock.json
+│   ├── tsconfig.json
+│   ├── tsconfig.app.json
+│   ├── tsconfig.node.json
+│   └── vite.config.ts
 ├── docs/
 │   ├── requirements.md      # 已确认需求、业务规则与待确认事项
 │   ├── development-plan.md  # 各阶段目标、产物与验收方式
