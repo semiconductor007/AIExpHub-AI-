@@ -18,9 +18,9 @@
 
 ## 当前开发阶段
 
-阶段 1、阶段 2、阶段 2.5、阶段 3A、阶段 3B、阶段 3C、阶段 3D、阶段 3E、阶段 3F、阶段 4A 已完成。当前为阶段 4B：前端基础工程与 API 通信。完成本阶段后停止，后续业务页面等待下一阶段指令。
+阶段 1、阶段 2、阶段 2.5、阶段 3A、阶段 3B、阶段 3C、阶段 3D、阶段 3E、阶段 3F、阶段 4A、阶段 4B 已完成。当前为阶段 4C：Project + ExperimentBatch 前端管理。完成本阶段后停止，不自动进入 Experiment / Result 页面。
 
-后端提供 `/health` 健康检查、Project、ExperimentBatch 和 Experiment CRUD API，以及 ExperimentResult 首次录入、查询和完整更新 API、多实验比较 API、对应的 Pydantic Schema 与请求级数据库 Session。四个 ORM 模型和业务表已建立，核心 API、数据库约束及比较规则已通过 pytest 自动验收。前端目前只有应用外壳、首页路由和后端健康状态卡片；Project / Batch / Experiment / Result / Compare 业务页面、统计及图表尚未实现，当前没有认证或迁移工具。
+后端提供 `/health` 健康检查、Project、ExperimentBatch 和 Experiment CRUD API，以及 ExperimentResult 首次录入、查询和完整更新 API、多实验比较 API、对应的 Pydantic Schema 与请求级数据库 Session。四个 ORM 模型和业务表已建立，核心 API、数据库约束及比较规则已通过 pytest 自动验收。前端已实现首页健康状态、Project 管理和当前项目的 Batch 管理；Experiment / Result / Compare 前端、统计及图表尚未实现，当前没有认证或迁移工具。
 
 已确认业务设计保留在 [需求边界](docs/requirements.md)、[领域模型](docs/domain-model.md)和[业务校验规则](docs/validation-rules.md)中，阶段安排见 [阶段开发计划](docs/development-plan.md)。
 
@@ -75,7 +75,11 @@ npm run dev
 
 按 Vite 输出的实际地址访问，默认是 `http://localhost:5173`。本阶段实际联调使用 `http://127.0.0.1:5173`。保留并提交 package-lock.json；需要严格按锁文件重新安装时可使用 `npm ci`。
 
-Vue Router 当前只有 `/` 首页。页面加载自动检测后端，显示连接中、服务正常和服务名称，或后端服务不可用；“重新检测”可在后端停止、恢复后更新状态，检测过程中禁用重复点击。
+Vue Router 当前提供 `/` 首页和 `/projects` 项目管理。顶部导航标记当前页面，点击 AIExpHub 可回首页。首页加载自动检测后端，显示连接中、服务正常和服务名称，或后端服务不可用；“重新检测”可在后端停止、恢复后更新状态，检测过程中禁用重复点击。
+
+项目管理采用上下两张卡片：项目列表支持新建、编辑、删除和查看批次；批次列表只加载当前选中项目的数据，未选择时不请求批次 API。两类名称提交前 trim 并校验非空，允许同名；创建和完整更新只提交 name / description，空说明传 null。保存后刷新列表，当前选中项目的名称和说明同步更新；删除前确认，成功后刷新，删除选中项目时清空选择与批次。
+
+API 文件复用统一 client，批次创建与列表使用 `/projects/{id}/batches`，编辑、删除使用 `/batches/{id}`，不移动所属项目。errors.ts 解析后端 detail 字符串、422 数组及网络错误；项目存在批次、批次存在实验的 409 显示中文提示，不自动删除子资源。加载、提交和删除有独立状态防止重复操作；切换项目时忽略旧批次请求。日期使用原生 Intl.DateTimeFormat，后端无偏移的 UTC 时间按 UTC 解析，失败时显示原始值，不增加日期依赖。
 
 所有 API 调用通过统一 Axios client（baseURL=`/api`，timeout=10000ms），HealthResponse 和 getHealth() 有明确类型。Vite 开发代理将 `/api` 请求转发至 `http://127.0.0.1:8000` 并移除前缀，例如 `/api/health` → `/health`，参见 [Vite proxy 文档](https://vite.dev/config/server-options.html#server-proxy)。浏览器始终请求前端同源路径，后端没有添加 CORS，未加入认证拦截器、重试或缓存；部署配置留待后续确定。
 
@@ -130,6 +134,8 @@ build 执行 `vue-tsc -b && vite build`，先类型检查，再生成 `frontend/
 
 阶段 4B 已通过真实浏览器联调：前后端同时启动时首页和 `/api/health` 正常；停止后端再检测显示不可用且页面未崩溃；重新启动后端再检测恢复正常。类型检查与前端构建成功，后端 102 个 pytest 保持通过。后端生产代码和冻结规则未修改；健康检查未写入业务数据。
 
+阶段 4C 已通过 A–Q 真实浏览器验收，覆盖项目与批次 CRUD、trim、同名项目、说明清空、选中项目同步、切换不串批次、刷新后持久化和后端断开 / 恢复；另验证两类删除 409、取消删除及真实 422 错误解析。前端类型检查与构建成功，后端 102 个测试保持通过。临时数据通过正常 API 按子到父顺序清理，最终四张表均为空；后端代码、依赖与冻结规则未修改。
+
 ## 基础目录结构
 
 ```text
@@ -162,15 +168,19 @@ AIExpHub/
 │   ├── pytest.ini
 │   ├── requirements-dev.txt
 │   └── requirements.txt
-├── frontend/                # 基础首页与 API 通信工程
+├── frontend/                # 首页、项目与批次管理
 │   ├── src/
 │   │   ├── api/
 │   │   │   ├── client.ts
-│   │   │   └── health.ts
+│   │   │   ├── health.ts
+│   │   │   ├── projects.ts
+│   │   │   ├── batches.ts
+│   │   │   └── errors.ts
 │   │   ├── router/
 │   │   │   └── index.ts
 │   │   ├── views/
-│   │   │   └── HomeView.vue
+│   │   │   ├── HomeView.vue
+│   │   │   └── ProjectManagementView.vue
 │   │   ├── App.vue
 │   │   ├── main.ts
 │   │   └── style.css

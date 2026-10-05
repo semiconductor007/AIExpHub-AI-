@@ -1,8 +1,11 @@
 <template>
   <header class="app-header">
     <div class="header-content">
-      <span class="app-name">AIExpHub</span>
-      <span class="app-description">实验管理平台</span>
+      <router-link to="/" class="app-name">AIExpHub</router-link>
+      <nav aria-label="主导航">
+        <router-link to="/" class="nav-link" exact-active-class="active">首页</router-link>
+        <router-link to="/projects" class="nav-link" exact-active-class="active">项目管理</router-link>
+      </nav>
     </div>
   </header>
   <main class="app-main">
@@ -21,7 +24,8 @@
   justify-content: space-between;
   align-items: center;
   gap: 16px;
-  max-width: 960px;
+  flex-wrap: wrap;
+  max-width: 1200px;
   margin: 0 auto;
   padding: 20px 24px;
 }
@@ -30,15 +34,30 @@
   font-size: 20px;
   font-weight: 700;
   color: #1f2937;
+  text-decoration: none;
 }
 
-.app-description {
+nav {
+  display: flex;
+  gap: 8px;
+}
+
+.nav-link {
+  padding: 8px 12px;
+  border-radius: 4px;
   font-size: 14px;
   color: #6b7280;
+  text-decoration: none;
+}
+
+.nav-link.active {
+  color: #2563eb;
+  background: #eff6ff;
+  font-weight: 600;
 }
 
 .app-main {
-  max-width: 960px;
+  max-width: 1200px;
   margin: 0 auto;
   padding: 48px 24px;
 }
