@@ -312,18 +312,7 @@ onBeforeUnmount(() => { projectRequest += 1; batchRequest += 1; experimentReques
 </template>
 
 <style scoped>
-.page-heading { margin-bottom: 28px; }
-h1 { margin: 0 0 12px; font-size: 28px; }
-.page-heading p, .hint { color: #6b7280; line-height: 1.7; }
-.comparison-card { margin-bottom: 24px; }
-.card-header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 16px; }
-h2 { margin: 0; font-size: 18px; }
-.card-actions { display: flex; flex-wrap: wrap; gap: 8px; }
-.card-actions .el-button { margin-left: 0; }
-.context-selectors { display: flex; flex-wrap: wrap; gap: 20px; margin: 16px 0 24px; }
-.context-selectors > div { flex: 1; min-width: 240px; }
-.context-selectors label { display: block; margin-bottom: 8px; font-size: 14px; }
-.context-selectors .el-select { width: 100%; }
+.hint { color: #6b7280; line-height: 1.7; }
 .result-content { min-height: 120px; }
 .metric-cell { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .best-summary { display: flex; flex-wrap: wrap; gap: 12px 24px; list-style: none; margin: 0 0 20px; padding: 0; color: #4b5563; font-size: 14px; line-height: 1.8; }

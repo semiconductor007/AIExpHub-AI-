@@ -393,7 +393,10 @@ onBeforeUnmount(() => { contextRequest += 1; batchRequest += 1; experimentReques
       </div>
     </div>
     <el-alert v-if="batchesError" :title="batchesError" type="error" :closable="false" show-icon />
-    <p v-if="!projectId" class="hint">请先选择实验项目，再选择所属实验批次。</p>
+    <el-empty v-if="!projectsLoading && !projectsError && projects.length === 0" description="暂无实验项目，请先前往项目管理创建项目。">
+      <el-button @click="router.push('/projects')">前往项目管理</el-button>
+    </el-empty>
+    <p v-else-if="!projectId" class="hint">请先选择实验项目，再选择所属实验批次。</p>
     <el-empty v-else-if="!batchesLoading && !batchesError && batches.length === 0" description="当前项目暂无实验批次，请先前往项目管理创建批次。">
       <el-button @click="router.push('/projects')">前往项目管理</el-button>
     </el-empty>
@@ -485,18 +488,7 @@ onBeforeUnmount(() => { contextRequest += 1; batchRequest += 1; experimentReques
 </template>
 
 <style scoped>
-.page-heading { margin-bottom: 28px; }
-h1 { margin: 0 0 12px; font-size: 28px; }
-.page-heading p, .hint { color: #6b7280; line-height: 1.7; }
-.management-card { margin-bottom: 24px; }
-.card-header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 16px; }
-h2 { margin: 0; font-size: 18px; overflow-wrap: anywhere; }
-.card-actions { display: flex; flex-wrap: wrap; gap: 8px; }
-.card-actions .el-button { margin-left: 0; }
-.context-selectors { display: flex; flex-wrap: wrap; gap: 20px; margin: 16px 0; }
-.context-selectors > div { flex: 1; min-width: 240px; }
-.context-selectors label { display: block; margin-bottom: 8px; font-size: 14px; }
-.context-selectors .el-select { width: 100%; }
+.hint { color: #6b7280; line-height: 1.7; }
 .result-content { min-height: 120px; }
 .edit-result { margin-top: 20px; }
 </style>

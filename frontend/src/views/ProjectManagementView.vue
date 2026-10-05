@@ -211,7 +211,9 @@ onMounted(loadProjects)
     <template v-else>
       <p class="current-project">当前项目：{{ selectedProject.name }}</p>
       <el-alert v-if="batchesError" :title="batchesError" type="error" :closable="false" show-icon />
-      <el-empty v-else-if="!batchesLoading && batches.length === 0" description="当前项目暂无实验批次" />
+      <el-empty v-else-if="!batchesLoading && batches.length === 0" description="当前项目暂无实验批次">
+        <el-button type="primary" :disabled="busy" @click="openDialog('batch')">新建批次</el-button>
+      </el-empty>
       <el-table v-else v-loading="batchesLoading" :data="batches" row-key="id" aria-label="实验批次列表">
         <el-table-column prop="name" label="名称" min-width="170" show-overflow-tooltip />
         <el-table-column label="描述" min-width="190" show-overflow-tooltip>
@@ -250,13 +252,6 @@ onMounted(loadProjects)
 </template>
 
 <style scoped>
-.page-heading { margin-bottom: 28px; }
-h1 { margin: 0 0 12px; font-size: 28px; }
-.page-heading p, .current-project { color: #6b7280; line-height: 1.7; }
-.management-card { margin-bottom: 24px; }
-.card-header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 16px; }
-h2 { margin: 0; font-size: 18px; overflow-wrap: anywhere; }
-.card-actions { display: flex; flex-wrap: wrap; gap: 8px; }
-.card-actions .el-button { margin-left: 0; }
+.current-project { color: #6b7280; line-height: 1.7; }
 .current-project { margin-top: 0; overflow-wrap: anywhere; }
 </style>

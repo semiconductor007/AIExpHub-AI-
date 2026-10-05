@@ -1,10 +1,12 @@
 # AIExpHub — AI 模型实验结果管理平台
 
+快速查阅：[项目简介](#项目简介) · [技术栈](#当前技术栈) · [当前功能](#当前功能) · [后端启动](#后端安装与启动) · [前端启动](#前端安装与启动) · [后端测试](#后端测试) · [核心业务规则](#核心业务规则) · [当前限制](#当前限制)
+
 ## 项目简介
 
-本项目对应课程综合实践选题第 14 题，计划开发一个用于管理 AI / 机器学习实验结果的 Web 平台，逐步支持实验项目管理、实验配置与结果指标记录、多实验比较和可视化分析。
+本项目对应课程综合实践选题第 14 题，是用于管理 AI / 机器学习实验结果的 Web 平台，支持实验项目与批次管理、模型参数与结果指标记录、跨实验比较和可视化分析。项目采用分阶段开发，课程最终验收与交付材料尚未完成。
 
-## 当前技术栈（暂定）
+## 当前技术栈
 
 | 用途 | 技术 |
 | --- | --- |
@@ -18,9 +20,13 @@
 
 ## 当前开发阶段
 
-阶段 1 至阶段 4E 已完成。当前为阶段 5A：ECharts 实验比较可视化，图表实现与可执行的联调验收已完成；实际浏览器窗口宽度调整的人工验收仍待补充，详见下方验证记录。完成本阶段工作后停止，等待下一阶段指令。
+阶段 1 至阶段 5B：首页与整体 UI 收尾已完成。首页入口、导航、页面标题、404、通用样式及基础响应式已完成本阶段验收；阶段 5A AA 仍待人工窗口拖动，详见下方验证记录。下一阶段计划为阶段 6：最终课程验收与交付材料，未自动开始。
 
-后端提供 `/health` 健康检查、Project、ExperimentBatch 和 Experiment CRUD API，以及 ExperimentResult 首次录入、查询和完整更新 API、多实验比较 API、对应的 Pydantic Schema 与请求级数据库 Session。四个 ORM 模型和业务表已建立，核心 API、数据库约束及比较规则已通过 pytest 自动验收。前端已实现首页健康状态、Project / Batch 管理、Experiment / Result 管理、Experiment Compare 表格和 ECharts 指标比较可视化；Dashboard / Statistics、AI 分析与比较历史尚未实现，当前没有认证或迁移工具。
+## 当前功能
+
+后端提供 `/health` 健康检查、Project、ExperimentBatch 和 Experiment CRUD API，以及 ExperimentResult 首次录入、查询和完整更新 API、多实验比较 API、对应的 Pydantic Schema 与请求级数据库 Session。四个 ORM 模型和业务表已建立，核心 API、数据库约束及比较规则已通过 pytest 自动验收。前端已实现首页功能入口与健康状态、Project / Batch 管理、Experiment / Result 管理、Experiment Compare 表格和 ECharts 指标比较可视化，以及明确的 404 页面。
+
+## 核心业务规则
 
 已确认业务设计保留在 [需求边界](docs/requirements.md)、[领域模型](docs/domain-model.md)和[业务校验规则](docs/validation-rules.md)中，阶段安排见 [阶段开发计划](docs/development-plan.md)。
 
@@ -75,7 +81,9 @@ npm run dev
 
 按 Vite 输出的实际地址访问，默认是 `http://localhost:5173`。本阶段实际联调使用 `http://127.0.0.1:5173`。保留并提交 package-lock.json；需要严格按锁文件重新安装时可使用 `npm ci`。
 
-Vue Router 当前提供 `/` 首页、`/projects` 项目管理、`/experiments` 实验管理和 `/compare` 实验比较。顶部导航标记当前页面，点击 AIExpHub 可回首页。首页加载自动检测后端，显示连接中、服务正常和服务名称，或后端服务不可用；“重新检测”可在后端停止、恢复后更新状态，检测过程中禁用重复点击。
+Vue Router 当前提供 `/` 首页、`/projects` 项目管理、`/experiments` 实验管理和 `/compare` 实验比较。首页由简介、三个功能入口 Card 和真实后端健康状态组成；入口通过 Element Plus 按钮进入现有路由，不展示统计或假数据。顶部导航标记当前页面，支持 hover、键盘焦点和窄屏换行，点击 AIExpHub 可回首页。首页加载自动检测后端，显示连接中、服务正常和服务名称，或后端服务不可用；“重新检测”可在后端停止、恢复后更新状态，检测过程中禁用重复点击，保留 aria-live。
+
+Router afterEach 使用 meta.title 设置 document.title：首页为 AIExpHub，业务页为“页面名称 | AIExpHub”。末尾 catch-all 路由显示“404 / 页面不存在 / 当前地址无对应页面。”及“返回首页”按钮，标题为“页面不存在 | AIExpHub”，不自动跳转。通用标题、Card、操作按钮和选择区样式集中在 style.css；首页内容限宽 1040px，业务页保留原有 1200px 布局与表格滚动。
 
 项目管理采用上下两张卡片：项目列表支持新建、编辑、删除和查看批次；批次列表只加载当前选中项目的数据，未选择时不请求批次 API。两类名称提交前 trim 并校验非空，允许同名；创建和完整更新只提交 name / description，空说明传 null。保存后刷新列表，当前选中项目的名称和说明同步更新；删除前确认，成功后刷新，删除选中项目时清空选择与批次。
 
@@ -115,6 +123,16 @@ build 执行 `vue-tsc -b && vite build`，先类型检查，再生成 `frontend/
 
 开发依赖固定 pytest 9.1.1、httpx 0.28.1，不改变生产运行依赖。当前有 102 个用例，包含原 60 个用例和新增的 42 个比较用例，覆盖核心 API、数据库第二层约束、比较输入和响应、null / 0、最优与并列、最新结果、单条查询和只读行为；测试文件可独立执行。原 Swagger 测试同步增加比较路径和标签。现有 Starlette 1.7.0 会提示 TestClient 使用 httpx 的第三方弃用 warning，调用仍正常，未为消除 warning 升级框架或加入其他测试依赖。
 
+## 当前限制
+
+- 当前使用本地 SQLite，部署与多人使用方案尚未确定。
+- 启动使用 `create_all` 创建缺失表，没有 Alembic，不能自动迁移已有表结构。
+- 无登录认证、用户系统或权限管理。
+- 不保存比较历史，比较每次读取当前有效结果。
+- 无 AI 自动分析、Dashboard / Statistics 或统计聚合接口。
+- Element Plus / ECharts 构建仍有 >500 kB chunk warning，不影响当前运行；本阶段未调整打包策略。
+- 阶段 5A AA 的真实浏览器窗口拖动验收待人工补充，课程最终验收与交付材料尚未完成。
+
 ## 当前数据库层
 
 应用启动时调用 `init_db()`，先加载 `app.models` 注册模型，再执行 `Base.metadata.create_all(bind=engine)`，创建缺失的本地 SQLite 表：
@@ -151,6 +169,12 @@ build 执行 `vue-tsc -b && vite build`，先类型检查，再生成 `frontend/
 阶段 4E 已通过 A–AI 真实浏览器验收：跨项目 / 批次保留选择、加入顺序、去重、null / 无 Result / 0、并列 Precision、Loss 最小、另一标签修改结果后不重选即读取新最佳值、失效实验 404 及手动恢复、后端断开 / 恢复、清空旧结果及重新加入均正常。另验证无项目 / 批次 / 实验空状态、快速切换不串候选，以及真实 422 经前端工具转换为中文；HTTP 访问日志确认比较只有一次 POST，无逐实验 Result 请求。npm run build 成功，后端仍为 102 passed。临时数据通过现有 API 清理，最终四表均为 0；未增加依赖或修改后端、数据库与冻结规则。
 
 阶段 5A 已通过真实浏览器 A–Z、AB–AF：四项分组柱、独立 Loss、null / 无 Result / 0、并列标签、Loss=0 的可见最佳、Loss=2.5、两类全空状态、另一标签修改 accuracy 后同步更新、选择清空及网络恢复均正常。另验证八个实验与长编号；重新比较实例 ID 保持不变，路由切换后每图仅一个 canvas，无 ECharts / dispose 错误。一次比较的 HTTP 访问日志只有一条 Compare POST，没有额外 Result GET。AA 使用临时容器宽度从 1110px 收窄至 777px 再恢复来验证 ResizeObserver，画布与容器宽度一致、实例不重建且无横向溢出，临时样式已撤回；当前预览工具未能调整实际浏览器窗口，因此 AA 的窗口调整步骤仍待人工确认。npm run build 类型检查及构建成功，JS chunk 为 1,606.83 kB（gzip 526.00 kB），保留 >500 kB warning，不调整打包策略；后端仍为 102 passed。临时数据通过现有 API 按 Experiment→Batch→Project 清理，最终四表均为 0；未修改后端生产代码、依赖、数据库或冻结规则。
+
+阶段 5B 已完成 A–AH 全局回归中的可执行检查：首页入口、四个导航与 active、项目 / 批次 CRUD、实验编辑、结果查询与修改、跨项目比较、精确表格、双图、最佳标签、重新比较、404、五页 title，以及后端停止 / 恢复均正常。另一标签修改 Accuracy 后，重新比较同步读取最新值；独立应用页面控制台无新的 Vue / ECharts error。网络、404、409 的实际页面提示及真实 422 的 errors.ts 解析保持中文；访问日志确认一次重新比较只有一个 Compare POST，无额外 Result GET，首页仅请求 health。
+
+基础响应式使用临时浏览器 iframe 加载真实应用，检查实际 CSS 视口 1440 / 1024 / 768 / 480px：首页入口分别为三 / 三 / 二 / 一列，导航可换行，页面无横向溢出，窄屏 Dialog 在视口内、表格内部可滚动。比较双图从宽到窄再恢复时 canvas 尺寸随容器变化、每图仅一个 canvas、实例不重建，X 轴无明显错位。iframe 验收期间浏览器工具曾记录 MutationObserver.observe 的 Node 类型错误，独立应用页面未复现；没有据此修改业务代码。临时验收页已移除。当前工具仍不能拖动实际预览窗口，因此不将 iframe 视口检查冒充实际窗口验收：**阶段 5A AA 待人工窗口拖动**。
+
+阶段 5B 的 npm run build 类型检查与构建成功，0 TypeScript / build error，JS chunk 为 1,608.74 kB（gzip 526.65 kB），保留 >500 kB warning；后端仍为 102 passed，保留原有 1 个 Starlette / httpx 弃用 warning。验收数据通过现有 API 按 Experiment→Batch→Project 清理，Result 自动 CASCADE，四表最终均为 0。后端生产代码、数据库结构、依赖和冻结业务规则未改动；服务已停止。本阶段没有新增统计、假数据或其他业务功能，未开始阶段 6。
 
 ## 基础目录结构
 
@@ -201,7 +225,8 @@ AIExpHub/
 │   │   │   ├── HomeView.vue
 │   │   │   ├── ProjectManagementView.vue
 │   │   │   ├── ExperimentManagementView.vue
-│   │   │   └── ExperimentComparisonView.vue
+│   │   │   ├── ExperimentComparisonView.vue
+│   │   │   └── NotFoundView.vue
 │   │   ├── utils/
 │   │   │   └── datetime.ts
 │   │   ├── components/

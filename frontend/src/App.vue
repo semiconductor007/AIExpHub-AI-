@@ -43,6 +43,8 @@ nav {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .nav-link {
@@ -59,9 +61,24 @@ nav {
   font-weight: 600;
 }
 
+.nav-link:hover { color: #2563eb; background: #eff6ff; }
+.app-name:focus-visible, .nav-link:focus-visible { outline: 2px solid #2563eb; outline-offset: 3px; }
+
 .app-main {
   max-width: 1200px;
   margin: 0 auto;
   padding: 48px 24px;
+  min-width: 0;
+}
+
+@media (max-width: 768px) {
+  .header-content { padding: 16px; }
+  .app-main { padding: 32px 16px; }
+}
+@media (max-width: 480px) {
+  .header-content { gap: 12px; padding: 12px; }
+  nav { gap: 4px; }
+  .nav-link { padding: 8px 10px; }
+  .app-main { padding: 24px 12px; }
 }
 </style>
