@@ -1,0 +1,42 @@
+# Python 虚拟环境与缓存
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# 前端依赖与构建产物
+node_modules/
+dist/
+*.tsbuildinfo
+
+# 本地配置与运行日志
+.env
+.env.*
+!.env.example
+*.log
+
+# SQLite 本地数据库及附属文件
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite-journal
+*.sqlite-wal
+*.sqlite-shm
+*.sqlite3
+*.sqlite3-journal
+*.sqlite3-wal
+*.sqlite3-shm
+
+# 操作系统临时文件
+.DS_Store
+Thumbs.db
+Desktop.ini
