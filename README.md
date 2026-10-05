@@ -12,15 +12,15 @@
 | UI | Element Plus |
 | 图表 | ECharts |
 | 后端 | Python 3.12 + FastAPI + Uvicorn |
-| ORM | SQLAlchemy 2.x（当前仅建立连接与会话设施） |
+| ORM | SQLAlchemy 2.x（已建立四个业务模型与数据库约束） |
 | 数据库 | SQLite |
 | 测试 | pytest（计划使用，当前未安装或编写） |
 
 ## 当前开发阶段
 
-阶段 1、阶段 2、阶段 2.5 已完成。当前为阶段 3A：后端最小可运行工程 + SQLite 数据库连接。
+阶段 1、阶段 2、阶段 2.5、阶段 3A 已完成。当前为阶段 3B：SQLAlchemy 业务模型与数据库约束。
 
-后端提供可启动的 FastAPI 应用、SQLite 连接与会话设施，以及 `/health` 健康检查。尚未创建业务 ORM 模型或业务表，也没有项目、批次、实验、结果或比较功能；前端仍为占位目录。
+后端提供可启动的 FastAPI 应用、SQLite 连接与会话设施，以及 `/health` 健康检查。已建立 Project、ExperimentBatch、Experiment、ExperimentResult 四个 ORM 模型，并实际创建对应四张业务表。当前没有业务 API、CRUD、Pydantic Schema 或比较功能；前端仍为占位目录。
 
 已确认业务设计保留在 [需求边界](docs/requirements.md)、[领域模型](docs/domain-model.md)和[业务校验规则](docs/validation-rules.md)中，阶段安排见 [阶段开发计划](docs/development-plan.md)。
 
@@ -51,7 +51,26 @@ python -m venv .venv
 
 `/health` 每次请求通过数据库会话执行 `SELECT 1`。成功返回 HTTP 200 和 `{"status":"ok","service":"AIExpHub API"}`；数据库连接失败返回 HTTP 503。按 `Ctrl+C` 停止服务。
 
-SQLite 路径由 `app/database.py` 的实际位置计算，固定为 `backend/data/aiexphub.db`，不受启动时当前目录影响。数据库首次连接时创建文件；当前没有业务表。`.venv`、Python 缓存及数据库文件均由现有 `.gitignore` 忽略。
+SQLite 路径由 `app/database.py` 的实际位置计算，固定为 `backend/data/aiexphub.db`，不受启动时当前目录影响。`.venv`、Python 缓存及数据库文件均由现有 `.gitignore` 忽略。
+
+## 当前数据库层
+
+应用启动时调用 `init_db()`，先加载 `app.models` 注册模型，再执行 `Base.metadata.create_all(bind=engine)`，创建缺失的本地 SQLite 表：
+
+- `projects`
+- `experiment_batches`
+- `experiments`
+- `experiment_results`
+
+当前开发阶段采用 `create_all` 初始化，重复启动不会重复创建已有表，但它不会迁移或修改已有表结构。后续需要正式迁移能力时再讨论 Alembic，本阶段未引入。
+
+每个新数据库连接通过 engine 的 `connect` 事件执行 `PRAGMA foreign_keys=ON`。Project → Batch、Batch → Experiment 使用 RESTRICT；Experiment → Result 使用 CASCADE。ORM 双向关系使用 `back_populates`，父端设置 `passive_deletes="all"`，由数据库处理删除，避免 ORM 将子记录外键改为 NULL；实验结果关系为可选单条结果。
+
+实验编号全局 UNIQUE，结果的 `experiment_id` UNIQUE。结果表的六个命名 CHECK 保证四项 [0, 1] 指标、非负 loss 和至少一项指标非 NULL。创建时间使用系统 UTC 时间，结果的 `updated_at` 在 ORM 更新时刷新；原生 SQL 更新不会触发 ORM 的 onupdate。
+
+数据库只提供第二层完整性保护。字符串非空白、编号 trim + uppercase、非空 JSON object，以及布尔值、NaN / Infinity 等输入校验留待后续应用层；本阶段没有添加 SQLite JSON 扩展 CHECK。参数列使用 `JSON(none_as_null=True)`，使 Python None 作为 SQL NULL 接受 NOT NULL 约束检查。
+
+已实际验证外键开启、两级 RESTRICT、两项 UNIQUE、指标范围、全空结果拒绝、合法边界及结果 CASCADE。临时验证数据已回滚，当前四张业务表均为空，数据库文件不提交。
 
 ## 基础目录结构
 
@@ -60,8 +79,9 @@ AIExpHub/
 ├── backend/
 │   ├── app/
 │   │   ├── __init__.py
-│   │   ├── main.py          # FastAPI 应用与健康检查
-│   │   └── database.py      # SQLite engine 与 SessionLocal
+│   │   ├── main.py          # 应用启动初始化与健康检查
+│   │   ├── database.py      # Base、连接、外键开启与 init_db
+│   │   └── models.py        # 四个业务 ORM 模型与数据库约束
 │   ├── data/
 │   │   └── .gitkeep         # aiexphub.db 为运行时文件，不提交
 │   └── requirements.txt

@@ -6,12 +6,13 @@ from fastapi import FastAPI, HTTPException
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 
-from app.database import SessionLocal, engine
+from app.database import SessionLocal, engine, init_db
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     try:
+        init_db()
         yield
     finally:
         engine.dispose()
