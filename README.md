@@ -18,9 +18,9 @@
 
 ## 当前开发阶段
 
-阶段 1、阶段 2、阶段 2.5、阶段 3A、阶段 3B、阶段 3C、阶段 3D、阶段 3E、阶段 3F、阶段 4A、阶段 4B 已完成。当前为阶段 4C：Project + ExperimentBatch 前端管理。完成本阶段后停止，不自动进入 Experiment / Result 页面。
+阶段 1 至阶段 4C 已完成。当前为阶段 4D：Experiment + ExperimentResult 前端管理，已完成并验收。完成本阶段后停止，等待下一阶段指令。
 
-后端提供 `/health` 健康检查、Project、ExperimentBatch 和 Experiment CRUD API，以及 ExperimentResult 首次录入、查询和完整更新 API、多实验比较 API、对应的 Pydantic Schema 与请求级数据库 Session。四个 ORM 模型和业务表已建立，核心 API、数据库约束及比较规则已通过 pytest 自动验收。前端已实现首页健康状态、Project 管理和当前项目的 Batch 管理；Experiment / Result / Compare 前端、统计及图表尚未实现，当前没有认证或迁移工具。
+后端提供 `/health` 健康检查、Project、ExperimentBatch 和 Experiment CRUD API，以及 ExperimentResult 首次录入、查询和完整更新 API、多实验比较 API、对应的 Pydantic Schema 与请求级数据库 Session。四个 ORM 模型和业务表已建立，核心 API、数据库约束及比较规则已通过 pytest 自动验收。前端已实现首页健康状态、Project / Batch 管理及 Experiment / Result 管理；Compare 前端、ECharts、Dashboard / 统计尚未实现，当前没有认证或迁移工具。
 
 已确认业务设计保留在 [需求边界](docs/requirements.md)、[领域模型](docs/domain-model.md)和[业务校验规则](docs/validation-rules.md)中，阶段安排见 [阶段开发计划](docs/development-plan.md)。
 
@@ -75,11 +75,15 @@ npm run dev
 
 按 Vite 输出的实际地址访问，默认是 `http://localhost:5173`。本阶段实际联调使用 `http://127.0.0.1:5173`。保留并提交 package-lock.json；需要严格按锁文件重新安装时可使用 `npm ci`。
 
-Vue Router 当前提供 `/` 首页和 `/projects` 项目管理。顶部导航标记当前页面，点击 AIExpHub 可回首页。首页加载自动检测后端，显示连接中、服务正常和服务名称，或后端服务不可用；“重新检测”可在后端停止、恢复后更新状态，检测过程中禁用重复点击。
+Vue Router 当前提供 `/` 首页、`/projects` 项目管理和 `/experiments` 实验管理。顶部导航标记当前页面，点击 AIExpHub 可回首页。首页加载自动检测后端，显示连接中、服务正常和服务名称，或后端服务不可用；“重新检测”可在后端停止、恢复后更新状态，检测过程中禁用重复点击。
 
 项目管理采用上下两张卡片：项目列表支持新建、编辑、删除和查看批次；批次列表只加载当前选中项目的数据，未选择时不请求批次 API。两类名称提交前 trim 并校验非空，允许同名；创建和完整更新只提交 name / description，空说明传 null。保存后刷新列表，当前选中项目的名称和说明同步更新；删除前确认，成功后刷新，删除选中项目时清空选择与批次。
 
 API 文件复用统一 client，批次创建与列表使用 `/projects/{id}/batches`，编辑、删除使用 `/batches/{id}`，不移动所属项目。errors.ts 解析后端 detail 字符串、422 数组及网络错误；项目存在批次、批次存在实验的 409 显示中文提示，不自动删除子资源。加载、提交和删除有独立状态防止重复操作；切换项目时忽略旧批次请求。日期使用原生 Intl.DateTimeFormat，后端无偏移的 UTC 时间按 UTC 解析，失败时显示原始值，不增加日期依赖。
+
+实验管理使用项目→批次→实验的选择流程，切换父资源清空下级选择和结果；各层请求计数器阻止过期响应覆盖新选择。项目管理的批次行可通过“管理实验”携带 projectId / batchId 跳转；仅在 ID 合法、项目存在且批次归属匹配时自动选择，否则回退手动选择。列表只请求当前批次的实验，不逐条请求 Result；用户查看结果或创建后自动选中新实验时才加载对应结果。
+
+实验表单对编号 trim + uppercase、模型名称 trim 后检查非空；多行参数使用 JSON.parse 校验为非空对象，允许自由键和嵌套对象。PUT 完整提交四个可编辑字段，空备注传 null，不发送 batch_id。结果未录入的特定 404 显示空状态；首次录入 POST、已有结果 PUT，共用五指标表单。空输入传 null，有限数值须满足范围，至少一项非空且 0 合法；保存后重新 GET 最新结果和更新时间。null 显示 `-`，0 显示 `0`，不转换百分比或固定小数位。删除实验需确认已有结果也将删除，使用已有后端 CASCADE，不提供 Result DELETE。
 
 所有 API 调用通过统一 Axios client（baseURL=`/api`，timeout=10000ms），HealthResponse 和 getHealth() 有明确类型。Vite 开发代理将 `/api` 请求转发至 `http://127.0.0.1:8000` 并移除前缀，例如 `/api/health` → `/health`，参见 [Vite proxy 文档](https://vite.dev/config/server-options.html#server-proxy)。浏览器始终请求前端同源路径，后端没有添加 CORS，未加入认证拦截器、重试或缓存；部署配置留待后续确定。
 
@@ -136,6 +140,8 @@ build 执行 `vue-tsc -b && vite build`，先类型检查，再生成 `frontend/
 
 阶段 4C 已通过 A–Q 真实浏览器验收，覆盖项目与批次 CRUD、trim、同名项目、说明清空、选中项目同步、切换不串批次、刷新后持久化和后端断开 / 恢复；另验证两类删除 409、取消删除及真实 422 错误解析。前端类型检查与构建成功，后端 102 个测试保持通过。临时数据通过正常 API 按子到父顺序清理，最终四张表均为空；后端代码、依赖与冻结规则未修改。
 
+阶段 4D 已通过 A–AH 真实浏览器验收，覆盖层级选择、实验 CRUD、JSON 校验、编号重复中文提示、结果录入与完整更新、null / 0、合法边界、更新时间、删除级联、批次删除限制和后端断开 / 恢复。另验证非法或归属不符的 query 回退、嵌套参数和并发首次录入的 409 恢复；通过实际 HTTP 访问日志核对列表无 Result N+1 请求。前端类型检查与构建成功，后端仍为 102 passed。临时数据通过现有 API 按 Experiment→Batch→Project 清理，四表最终为空；未修改后端生产代码、数据库设计、依赖或冻结规则。
+
 ## 基础目录结构
 
 ```text
@@ -168,19 +174,24 @@ AIExpHub/
 │   ├── pytest.ini
 │   ├── requirements-dev.txt
 │   └── requirements.txt
-├── frontend/                # 首页、项目与批次管理
+├── frontend/                # 首页、项目 / 批次 / 实验 / 结果管理
 │   ├── src/
 │   │   ├── api/
 │   │   │   ├── client.ts
 │   │   │   ├── health.ts
 │   │   │   ├── projects.ts
 │   │   │   ├── batches.ts
+│   │   │   ├── experiments.ts
+│   │   │   ├── results.ts
 │   │   │   └── errors.ts
 │   │   ├── router/
 │   │   │   └── index.ts
 │   │   ├── views/
 │   │   │   ├── HomeView.vue
-│   │   │   └── ProjectManagementView.vue
+│   │   │   ├── ProjectManagementView.vue
+│   │   │   └── ExperimentManagementView.vue
+│   │   ├── utils/
+│   │   │   └── datetime.ts
 │   │   ├── App.vue
 │   │   ├── main.ts
 │   │   └── style.css

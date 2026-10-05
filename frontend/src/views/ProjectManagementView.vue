@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, reactive, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
 import { createProject, deleteProject, getProjects, updateProject } from '../api/projects'
@@ -7,6 +8,9 @@ import type { Project } from '../api/projects'
 import { createBatch, deleteBatch, getProjectBatches, updateBatch } from '../api/batches'
 import type { ExperimentBatch } from '../api/batches'
 import { getApiErrorMessage } from '../api/errors'
+import { formatDateTime } from '../utils/datetime'
+
+const router = useRouter()
 
 const projects = ref<Project[]>([])
 const batches = ref<ExperimentBatch[]>([])
@@ -32,17 +36,6 @@ const rules: FormRules<typeof form> = {
   name: [{ required: true, trigger: 'blur', validator: (_rule, value: unknown, callback) => {
     callback(typeof value === 'string' && value.trim() ? undefined : new Error('名称不能为空'))
   } }],
-}
-
-const dateFormatter = new Intl.DateTimeFormat('zh-CN', {
-  year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false,
-})
-
-function formatCreatedAt(value: string): string {
-  if (!value) return '-'
-  // SQLite may omit the offset; the backend records created_at in UTC.
-  const date = new Date(/(Z|[+-]\d{2}:\d{2})$/i.test(value) ? value : `${value}Z`)
-  return Number.isNaN(date.getTime()) ? value : dateFormatter.format(date)
 }
 
 function clearSelection(): void {
@@ -192,7 +185,7 @@ onMounted(loadProjects)
         <template #default="{ row }">{{ row.description || '-' }}</template>
       </el-table-column>
       <el-table-column label="创建时间" width="180">
-        <template #default="{ row }">{{ formatCreatedAt(row.created_at) }}</template>
+        <template #default="{ row }">{{ formatDateTime(row.created_at) }}</template>
       </el-table-column>
       <el-table-column label="操作" width="230">
         <template #default="{ row }">
@@ -225,10 +218,12 @@ onMounted(loadProjects)
           <template #default="{ row }">{{ row.description || '-' }}</template>
         </el-table-column>
         <el-table-column label="创建时间" width="180">
-          <template #default="{ row }">{{ formatCreatedAt(row.created_at) }}</template>
+          <template #default="{ row }">{{ formatDateTime(row.created_at) }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="150">
+        <el-table-column label="操作" width="230">
           <template #default="{ row }">
+            <el-button link type="primary" :disabled="busy || batchesLoading"
+                       @click="router.push({ path: '/experiments', query: { projectId: row.project_id, batchId: row.id } })">管理实验</el-button>
             <el-button link type="primary" :disabled="busy || batchesLoading" @click="openDialog('batch', row)">编辑</el-button>
             <el-button link type="danger" :disabled="busy || batchesLoading" @click="removeEntity('batch', row)">删除</el-button>
           </template>

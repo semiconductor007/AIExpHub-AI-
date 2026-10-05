@@ -5,6 +5,7 @@
       <nav aria-label="主导航">
         <router-link to="/" class="nav-link" exact-active-class="active">首页</router-link>
         <router-link to="/projects" class="nav-link" exact-active-class="active">项目管理</router-link>
+        <router-link to="/experiments" class="nav-link" exact-active-class="active">实验管理</router-link>
       </nav>
     </div>
   </header>
@@ -39,6 +40,7 @@
 
 nav {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
 }
 
