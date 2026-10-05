@@ -1,9 +1,10 @@
 """SQLite connection infrastructure and local table initialization."""
 
+from collections.abc import Iterator
 from pathlib import Path
 
 from sqlalchemy import URL, create_engine, event
-from sqlalchemy.orm import DeclarativeBase, sessionmaker
+from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 
 class Base(DeclarativeBase):
@@ -34,7 +35,16 @@ def enable_sqlite_foreign_keys(dbapi_connection, connection_record):
         dbapi_connection.autocommit = previous_autocommit
 
 
-SessionLocal = sessionmaker(bind=engine)
+SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
+
+
+def get_db() -> Iterator[Session]:
+    with SessionLocal() as db:
+        try:
+            yield db
+        except Exception:
+            db.rollback()
+            raise
 
 
 def init_db() -> None:
