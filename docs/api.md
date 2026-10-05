@@ -1,8 +1,8 @@
 # 当前 API
 
-当前阶段：3E，ExperimentResult API。本文仅记录已实现接口；未实现比较或统计 API。
+当前阶段：4A，多实验比较 API。本文仅记录已实现接口；统计及前端功能尚未实现。
 
-本地地址：`http://127.0.0.1:8000`。Swagger：`/docs`，OpenAPI：`/openapi.json`。Swagger 标签为 Health、Projects、Experiment Batches、Experiments、Experiment Results。
+本地地址：`http://127.0.0.1:8000`。Swagger：`/docs`，OpenAPI：`/openapi.json`。Swagger 标签为 Health、Projects、Experiment Batches、Experiments、Experiment Results、Experiment Comparison。
 
 ## 接口列表
 
@@ -128,3 +128,84 @@ PUT 只更新已存在的结果，不执行 upsert，id 和 experiment_id 保持
 - 删除已有结果的 Experiment 返回 204，数据库 CASCADE 同时删除对应 Result。
 
 阶段 3E 实际 HTTP 验证中，NaN、Infinity、-Infinity 请求均返回 422（finite_number），错误回显 input 分别为文本 nan、inf、-inf；数据库未写入这些非法结果。真实修改指标后 updated_at 变晚；完全相同的 PUT 没有强制刷新时间。
+
+## 多实验比较 API
+
+`POST /experiments/compare`，Swagger 标签为 Experiment Comparison。合法请求返回 HTTP 200；允许跨 Project、跨 ExperimentBatch、不同模型比较。
+
+### 请求与错误
+
+```json
+{
+  "experiment_ids": [3, 1, 2]
+}
+```
+
+- experiment_ids 必填，必须是数组，至少包含 2 个不同 ID；不静默去重。
+- 每个 ID 必须是严格整数且 > 0；bool、字符串数字、浮点数、null 均不作为合法 ID 接受。
+- 输入使用 `extra="forbid"`。字段缺失、非数组、数量不足、重复 ID、非法 ID 或额外字段均返回 422 和标准 detail 错误数组。
+- 任一实验不存在时返回 404，例如 `{"detail":"Experiment not found: 999"}`。多个 ID 缺失时，稳定返回请求输入顺序中的第一个缺失 ID，不返回部分比较结果。
+- 比较接口没有业务 409 场景。实验存在但没有 Result，或某指标全部为空，仍返回 200。
+
+### 响应结构
+
+响应 Schema 为 ExperimentCompareResponse，顶层仅包含 experiments、best_by_metric。下面示例假设实验 3 有部分指标，实验 1 尚未录入结果：
+
+```json
+{
+  "experiments": [
+    {
+      "id": 3,
+      "experiment_no": "EXP-003",
+      "model_name": "Model B",
+      "batch_id": 2,
+      "project_id": 2,
+      "result": {
+        "accuracy": 0.9,
+        "precision": null,
+        "recall": null,
+        "f1": null,
+        "loss": 0.3
+      }
+    },
+    {
+      "id": 1,
+      "experiment_no": "EXP-001",
+      "model_name": "Model A",
+      "batch_id": 1,
+      "project_id": 1,
+      "result": null
+    }
+  ],
+  "best_by_metric": {
+    "accuracy": {"direction": "max", "value": 0.9, "experiment_ids": [3]},
+    "precision": {"direction": "max", "value": null, "experiment_ids": []},
+    "recall": {"direction": "max", "value": null, "experiment_ids": []},
+    "f1": {"direction": "max", "value": null, "experiment_ids": []},
+    "loss": {"direction": "min", "value": 0.3, "experiment_ids": [3]}
+  }
+}
+```
+
+该响应示例对应请求 `{"experiment_ids":[3,1]}`。
+
+- experiments 严格保持请求 ID 顺序，例如 [3, 1, 2] 对应返回 3、1、2。
+- ComparisonExperiment 仅返回 id、experiment_no、model_name、batch_id、project_id、result。project_id 通过 Experiment → Batch → Project 获得，不增加数据库列。
+- Result 存在时仅返回五项指标，单项缺失保持 null，不返回结果 id 或 updated_at。没有 Result 时保留该实验且 result=null，不创建结果、不补 0。
+- ComparisonBestByMetric 明确固定五个必需指标键；每项 BestMetric 包含 direction、value、experiment_ids。使用 Pydantic response_model，Swagger 展示完整结构。
+
+### 最佳值与数据一致性
+
+| 指标 | direction | 最佳值 |
+| --- | --- | --- |
+| accuracy | max | 最大 |
+| precision | max | 最大 |
+| recall | max | 最大 |
+| f1 | max | 最大 |
+| loss | min | 最小 |
+
+每项独立计算，仅使用该指标非 null 的实验。没有 Result 的实验不参与任何最佳值计算；0 是合法值，必须参与。所有值都为空时仍保留指标键，返回 value=null、experiment_ids=[]。
+
+按数据库实际 float 值比较大小及相等，不使用 epsilon、round 或百分比转换。并列最优时返回全部最优实验 ID，顺序与请求输入一致，例如输入 [2, 3, 1]，实验 2、1 都为 accuracy=0.9，实验 3 为 0.8，则最佳 ID 为 [2, 1]。
+
+每次请求通过独立 Session 重新查询当前结果。使用 select(Experiment) 配合 joinedload，一条 SELECT 加载实验、所属批次、项目及可选结果，避免逐实验查询。比较请求只读，不 commit、不修改现有记录、不缓存或保存比较结果、不新增表。PUT 修改 Result 后再次比较立即使用新指标和新的最佳值；PUT 清空的指标保持 null。

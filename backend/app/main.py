@@ -1,4 +1,4 @@
-"""FastAPI application with project, batch, experiment, result and health endpoints."""
+"""FastAPI application with experiment management, comparison and health endpoints."""
 
 from contextlib import asynccontextmanager
 from math import isfinite
@@ -11,7 +11,7 @@ from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.database import SessionLocal, engine, init_db
-from app.routers import batches, experiments, projects, results
+from app.routers import batches, compare, experiments, projects, results
 
 
 @asynccontextmanager
@@ -26,6 +26,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="AIExpHub API", lifespan=lifespan)
 app.include_router(projects.router)
 app.include_router(batches.router)
+app.include_router(compare.router)
 app.include_router(experiments.router)
 app.include_router(results.router)
 

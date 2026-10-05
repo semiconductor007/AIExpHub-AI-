@@ -18,9 +18,9 @@
 
 ## 当前开发阶段
 
-阶段 1、阶段 2、阶段 2.5、阶段 3A、阶段 3B、阶段 3C、阶段 3D、阶段 3E 已完成。当前为阶段 3F：后端 pytest 自动化验收。
+阶段 1、阶段 2、阶段 2.5、阶段 3A、阶段 3B、阶段 3C、阶段 3D、阶段 3E、阶段 3F 已完成。当前为阶段 4A：多实验比较 API。完成本阶段后停止，阶段 4B 的范围等待后续指令。
 
-后端提供 `/health` 健康检查、Project、ExperimentBatch 和 Experiment CRUD API，以及 ExperimentResult 首次录入、查询和完整更新 API、对应的 Pydantic Schema 与请求级数据库 Session。四个 ORM 模型和业务表已建立，核心 API 与数据库约束已通过 pytest 自动验收；比较、统计及前端功能尚未实现，当前没有认证或迁移工具。
+后端提供 `/health` 健康检查、Project、ExperimentBatch 和 Experiment CRUD API，以及 ExperimentResult 首次录入、查询和完整更新 API、多实验比较 API、对应的 Pydantic Schema 与请求级数据库 Session。四个 ORM 模型和业务表已建立，核心 API、数据库约束及比较规则已通过 pytest 自动验收；统计、图表及前端功能尚未实现，当前没有认证或迁移工具。
 
 已确认业务设计保留在 [需求边界](docs/requirements.md)、[领域模型](docs/domain-model.md)和[业务校验规则](docs/validation-rules.md)中，阶段安排见 [阶段开发计划](docs/development-plan.md)。
 
@@ -29,6 +29,8 @@
 Experiment 编号在 Schema 中 trim + uppercase，应用层检查全局唯一，数据库 UNIQUE 提供第二层保护；模型名称 trim 后非空，parameters 必须为非空 JSON object、参数键不固定。Experiment PUT 完整更新编号、模型、参数和备注，省略 notes 或传 null 会清空，不允许移动所属 Batch。实验可以没有 Result，响应暂不包含结果；当前只提供批次内实验列表。
 
 Result 通过 `/experiments/{experiment_id}/result` 访问：POST 仅首次创建，重复录入返回 409；GET / PUT 区分实验不存在与结果未录入，均返回对应 404，PUT 不执行 upsert。五项指标至少一项非 null，允许整数和浮点数，拒绝 bool、string、NaN / Infinity；前四项范围 [0, 1]，loss >= 0。PUT 完整替换指标，省略项清空，真实修改后 updated_at 刷新。没有 Result DELETE 或全局结果列表。
+
+`POST /experiments/compare` 接收至少两个不同的严格正整数 ID，允许跨项目、批次和模型，按输入顺序返回实验。缺失结果或指标保持 null；accuracy / precision / recall / f1 取最大，loss 取最小，并列最优全部返回，全空指标没有最佳实验。每次只读查询最新 Result，不保存或缓存比较结果；请求非法返回 422，实验不存在返回包含缺失 ID 的 404。详细结构见 [当前 API](docs/api.md)。
 
 ## 后端安装与启动
 
@@ -72,7 +74,7 @@ SQLite 路径由 `app/database.py` 的实际位置计算，固定为 `backend/da
 
 测试通过 FastAPI TestClient 调用实际 HTTP 层，每个用例使用独立的 `tmp_path/test.db` SQLite 数据库并开启外键。Router 的 get_db 和健康检查的 Session 均指向测试数据库；TestClient 不进入生产 lifespan，测试守卫禁止生产 engine 连接或 init_db 执行。测试不会读取、清空或修改 `backend/data/aiexphub.db`。临时目录由 pytest 管理，结束后关闭会话、清空 dependency overrides 并 dispose 测试 engine。
 
-开发依赖固定 pytest 9.1.1、httpx 0.28.1，不改变生产运行依赖。当前有 60 个用例，覆盖 Project / Batch / Experiment / Result 的核心规则和数据库第二层约束；测试文件可独立执行。现有 Starlette 1.7.0 会提示 TestClient 使用 httpx 的第三方弃用 warning，调用仍正常，未为消除 warning 升级框架或加入其他测试依赖。
+开发依赖固定 pytest 9.1.1、httpx 0.28.1，不改变生产运行依赖。当前有 102 个用例，包含原 60 个用例和新增的 42 个比较用例，覆盖核心 API、数据库第二层约束、比较输入和响应、null / 0、最优与并列、最新结果、单条查询和只读行为；测试文件可独立执行。原 Swagger 测试同步增加比较路径和标签。现有 Starlette 1.7.0 会提示 TestClient 使用 httpx 的第三方弃用 warning，调用仍正常，未为消除 warning 升级框架或加入其他测试依赖。
 
 ## 当前数据库层
 
@@ -99,6 +101,8 @@ SQLite 路径由 `app/database.py` 的实际位置计算，固定为 `backend/da
 
 阶段 3E 已通过 A–AA 真实 HTTP 验证：结果首次录入、查询、完整更新、数值边界、bool / string / 非有限值拒绝、更新时间和 Experiment 删除 CASCADE 均正常。NaN、Infinity、-Infinity 实测均返回 422；另确认 UNIQUE / CHECK 及提交失败回滚有效。临时数据与触发器已清理，四张表记录数均为 0，服务已停止。
 
+阶段 4A 的 102 个 pytest 全部通过（原 60 个 + 比较 42 个）。真实启动 Uvicorn，使用两个项目、三个批次、四个实验验证跨项目比较、部分指标、无结果、并列最优和 loss 最小；PUT 修改 accuracy 后再次比较立即更新最佳实验。HTTP 验证数据已清理，四张表记录数均为 0，服务已停止。自动测试使用隔离数据库，真实 HTTP 验证按要求使用本地运行数据库并在结束后清理。
+
 ## 基础目录结构
 
 ```text
@@ -109,12 +113,13 @@ AIExpHub/
 │   │   ├── main.py          # 初始化、Router 注册与健康检查
 │   │   ├── database.py      # Base、连接、get_db 与 init_db
 │   │   ├── models.py        # 四个业务 ORM 模型与数据库约束
-│   │   ├── schemas.py       # Project、Batch、Experiment 与 Result Schema
+│   │   ├── schemas.py       # 业务实体与比较请求 / 响应 Schema
 │   │   └── routers/
 │   │       ├── __init__.py
 │   │       ├── projects.py
 │   │       ├── batches.py
 │   │       ├── experiments.py
+│   │       ├── compare.py
 │   │       └── results.py
 │   ├── data/
 │   │   └── .gitkeep         # aiexphub.db 为运行时文件，不提交
@@ -125,6 +130,7 @@ AIExpHub/
 │   │   ├── test_batches.py
 │   │   ├── test_experiments.py
 │   │   ├── test_results.py
+│   │   ├── test_compare.py
 │   │   └── test_database_constraints.py
 │   ├── pytest.ini
 │   ├── requirements-dev.txt

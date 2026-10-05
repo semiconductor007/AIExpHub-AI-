@@ -1,7 +1,7 @@
-"""Request and response schemas for projects, batches, experiments and results."""
+"""Request and response schemas for experiments, results and comparison."""
 
 from datetime import datetime
-from typing import Annotated, Any, Self
+from typing import Annotated, Any, Literal, Self
 
 from pydantic import (
     BaseModel,
@@ -149,3 +149,56 @@ class ExperimentResultRead(BaseModel):
     f1: float | None
     loss: float | None
     updated_at: datetime
+
+
+class ExperimentCompareRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    experiment_ids: list[Annotated[int, Field(strict=True, gt=0)]] = Field(
+        strict=True, min_length=2
+    )
+
+    @field_validator("experiment_ids")
+    @classmethod
+    def require_distinct_experiments(cls, value: list[int]) -> list[int]:
+        if len(set(value)) != len(value):
+            raise ValueError("experiment_ids must not contain duplicates")
+        return value
+
+
+class ComparisonResultMetrics(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    accuracy: float | None
+    precision: float | None
+    recall: float | None
+    f1: float | None
+    loss: float | None
+
+
+class ComparisonExperiment(BaseModel):
+    id: int
+    experiment_no: str
+    model_name: str
+    batch_id: int
+    project_id: int
+    result: ComparisonResultMetrics | None
+
+
+class BestMetric(BaseModel):
+    direction: Literal["max", "min"]
+    value: float | None
+    experiment_ids: list[int]
+
+
+class ComparisonBestByMetric(BaseModel):
+    accuracy: BestMetric
+    precision: BestMetric
+    recall: BestMetric
+    f1: BestMetric
+    loss: BestMetric
+
+
+class ExperimentCompareResponse(BaseModel):
+    experiments: list[ComparisonExperiment]
+    best_by_metric: ComparisonBestByMetric
