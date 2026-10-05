@@ -1,9 +1,16 @@
-"""Request and response schemas for projects, batches and experiments."""
+"""Request and response schemas for projects, batches, experiments and results."""
 
 from datetime import datetime
-from typing import Annotated, Any
+from typing import Annotated, Any, Self
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    StringConstraints,
+    field_validator,
+    model_validator,
+)
 
 
 Name = Annotated[
@@ -93,3 +100,52 @@ class ExperimentRead(BaseModel):
     parameters: dict[str, Any]
     created_at: datetime
     notes: str | None
+
+
+class _ExperimentResultInput(BaseModel):
+    model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
+
+    accuracy: float | None = Field(default=None, ge=0, le=1)
+    precision: float | None = Field(default=None, ge=0, le=1)
+    recall: float | None = Field(default=None, ge=0, le=1)
+    f1: float | None = Field(default=None, ge=0, le=1)
+    loss: float | None = Field(default=None, ge=0)
+
+    @field_validator("accuracy", "precision", "recall", "f1", "loss", mode="before")
+    @classmethod
+    def require_numeric_metric(cls, value: Any) -> Any:
+        if value is not None and (
+            isinstance(value, bool) or not isinstance(value, (int, float))
+        ):
+            raise ValueError("metric must be an integer or float, not a bool or string")
+        return value
+
+    @model_validator(mode="after")
+    def require_at_least_one_metric(self) -> Self:
+        if all(
+            value is None
+            for value in (self.accuracy, self.precision, self.recall, self.f1, self.loss)
+        ):
+            raise ValueError("at least one metric must be non-null")
+        return self
+
+
+class ExperimentResultCreate(_ExperimentResultInput):
+    pass
+
+
+class ExperimentResultUpdate(_ExperimentResultInput):
+    pass
+
+
+class ExperimentResultRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    experiment_id: int
+    accuracy: float | None
+    precision: float | None
+    recall: float | None
+    f1: float | None
+    loss: float | None
+    updated_at: datetime

@@ -1,13 +1,17 @@
-"""FastAPI application with project, batch, experiment and health endpoints."""
+"""FastAPI application with project, batch, experiment, result and health endpoints."""
 
 from contextlib import asynccontextmanager
+from math import isfinite
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.encoders import jsonable_encoder
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.database import SessionLocal, engine, init_db
-from app.routers import batches, experiments, projects
+from app.routers import batches, experiments, projects, results
 
 
 @asynccontextmanager
@@ -23,6 +27,19 @@ app = FastAPI(title="AIExpHub API", lifespan=lifespan)
 app.include_router(projects.router)
 app.include_router(batches.router)
 app.include_router(experiments.router)
+app.include_router(results.router)
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_error_response(
+    request: Request, exc: RequestValidationError
+) -> JSONResponse:
+    # Invalid NaN/Infinity may appear in error inputs, which must still be valid JSON.
+    detail = jsonable_encoder(
+        exc.errors(),
+        custom_encoder={float: lambda value: value if isfinite(value) else str(value)},
+    )
+    return JSONResponse(status_code=422, content={"detail": detail})
 
 
 @app.get("/health", tags=["Health"])

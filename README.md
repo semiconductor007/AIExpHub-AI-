@@ -18,15 +18,17 @@
 
 ## 当前开发阶段
 
-阶段 1、阶段 2、阶段 2.5、阶段 3A、阶段 3B、阶段 3C 已完成。当前为阶段 3D：Experiment 基础 API。
+阶段 1、阶段 2、阶段 2.5、阶段 3A、阶段 3B、阶段 3C、阶段 3D 已完成。当前为阶段 3E：ExperimentResult API。
 
-后端提供 `/health` 健康检查、Project、ExperimentBatch 和 Experiment CRUD API、对应的 Pydantic Schema 与请求级数据库 Session。四个 ORM 模型和业务表已建立；ExperimentResult、比较、统计及前端功能尚未实现。当前没有 pytest、认证或迁移工具。
+后端提供 `/health` 健康检查、Project、ExperimentBatch 和 Experiment CRUD API，以及 ExperimentResult 首次录入、查询和完整更新 API、对应的 Pydantic Schema 与请求级数据库 Session。四个 ORM 模型和业务表已建立；比较、统计及前端功能尚未实现。当前没有 pytest、认证或迁移工具。
 
 已确认业务设计保留在 [需求边界](docs/requirements.md)、[领域模型](docs/domain-model.md)和[业务校验规则](docs/validation-rules.md)中，阶段安排见 [阶段开发计划](docs/development-plan.md)。
 
 已实现接口及状态码见 [当前 API](docs/api.md)。名称 trim 后非空，列表按 id ASC 返回；PUT 完整更新 name / description，省略或传 null 的 description 会清空。输入不接受 id、created_at 或 Batch 的 project_id；删除项目或批次时保留 RESTRICT 规则，存在子记录返回 409。资源不存在返回 404，输入校验失败返回 422。
 
 Experiment 编号在 Schema 中 trim + uppercase，应用层检查全局唯一，数据库 UNIQUE 提供第二层保护；模型名称 trim 后非空，parameters 必须为非空 JSON object、参数键不固定。Experiment PUT 完整更新编号、模型、参数和备注，省略 notes 或传 null 会清空，不允许移动所属 Batch。实验可以没有 Result，响应暂不包含结果；当前只提供批次内实验列表。
+
+Result 通过 `/experiments/{experiment_id}/result` 访问：POST 仅首次创建，重复录入返回 409；GET / PUT 区分实验不存在与结果未录入，均返回对应 404，PUT 不执行 upsert。五项指标至少一项非 null，允许整数和浮点数，拒绝 bool、string、NaN / Infinity；前四项范围 [0, 1]，loss >= 0。PUT 完整替换指标，省略项清空，真实修改后 updated_at 刷新。没有 Result DELETE 或全局结果列表。
 
 ## 后端安装与启动
 
@@ -72,13 +74,15 @@ SQLite 路径由 `app/database.py` 的实际位置计算，固定为 `backend/da
 
 实验编号全局 UNIQUE，结果的 `experiment_id` UNIQUE。结果表的六个命名 CHECK 保证四项 [0, 1] 指标、非负 loss 和至少一项指标非 NULL。创建时间使用系统 UTC 时间，结果的 `updated_at` 在 ORM 更新时刷新；原生 SQL 更新不会触发 ORM 的 onupdate。
 
-数据库提供第二层完整性保护，Project 与 Batch 名称、Experiment 编号与模型名称、非空 JSON object 的输入校验已在 Schema 实现。指标布尔值、NaN / Infinity 等输入校验留待后续结果 API；没有添加 SQLite JSON 扩展 CHECK。参数列使用 `JSON(none_as_null=True)`，使 Python None 作为 SQL NULL 接受 NOT NULL 约束检查。
+数据库提供第二层完整性保护，Project 与 Batch 名称、Experiment 编号与模型名称、非空 JSON object 和结果指标的输入校验已在 Schema 实现。422 错误回显中的非有限值转为文本，避免响应序列化失败；非法指标不会保存。没有添加 SQLite JSON 扩展 CHECK。参数列使用 `JSON(none_as_null=True)`，使 Python None 作为 SQL NULL 接受 NOT NULL 约束检查。
 
 已实际验证外键开启、两级 RESTRICT、两项 UNIQUE、指标范围、全空结果拒绝、合法边界及结果 CASCADE。临时验证数据已回滚，当前四张业务表均为空，数据库文件不提交。
 
 阶段 3C 已通过真实 Uvicorn HTTP 调用验证项目和批次的创建、查询、修改、删除、404 / 409 / 422、空列表、名称 trim、列表顺序、只读字段拒绝和数据库提交失败处理。
 
 阶段 3D 已通过 A–X 真实 HTTP 验证，包括实验 CRUD、编号规范化、跨项目全局唯一、PUT 排除自身、参数校验与 Batch RESTRICT 回归。另验证了数据库 UNIQUE、提交时唯一冲突和其他 IntegrityError 的回滚；HTTP 验证数据与临时触发器已清理，四张表记录数均为 0，服务已停止。
+
+阶段 3E 已通过 A–AA 真实 HTTP 验证：结果首次录入、查询、完整更新、数值边界、bool / string / 非有限值拒绝、更新时间和 Experiment 删除 CASCADE 均正常。NaN、Infinity、-Infinity 实测均返回 422；另确认 UNIQUE / CHECK 及提交失败回滚有效。临时数据与触发器已清理，四张表记录数均为 0，服务已停止。
 
 ## 基础目录结构
 
@@ -90,12 +94,13 @@ AIExpHub/
 │   │   ├── main.py          # 初始化、Router 注册与健康检查
 │   │   ├── database.py      # Base、连接、get_db 与 init_db
 │   │   ├── models.py        # 四个业务 ORM 模型与数据库约束
-│   │   ├── schemas.py       # Project、Batch 与 Experiment Schema
+│   │   ├── schemas.py       # Project、Batch、Experiment 与 Result Schema
 │   │   └── routers/
 │   │       ├── __init__.py
 │   │       ├── projects.py
 │   │       ├── batches.py
-│   │       └── experiments.py
+│   │       ├── experiments.py
+│   │       └── results.py
 │   ├── data/
 │   │   └── .gitkeep         # aiexphub.db 为运行时文件，不提交
 │   └── requirements.txt
