@@ -37,9 +37,14 @@ export function getApiErrorMessage(error: unknown, fallback = '操作失败，�
   if (!response || [502, 503, 504].includes(response.status)
       || (response.status === 500 && response.data === '')) return networkMessage
   const detail = isRecord(response.data) ? response.data.detail : undefined
-  if (typeof detail === 'string') return detailMessages[detail] ?? detail
+  if (typeof detail === 'string') {
+    const missingExperiment = /^Experiment not found: ([1-9]\d*)$/.exec(detail)
+    if (missingExperiment) return `实验 ID ${missingExperiment[1]} 已不存在，请刷新候选列表并重新选择。`
+    return detailMessages[detail] ?? detail
+  }
   if (Array.isArray(detail)) {
     const messages = detail.filter(isRecord).map((item) => {
+      if (Array.isArray(item.loc) && item.loc.includes('experiment_ids')) return '请选择至少两个不同的有效实验进行比较。'
       const field = Array.isArray(item.loc) ? item.loc.at(-1) : undefined
       const label = typeof field === 'string' ? fieldLabels[field] ?? '输入' : '输入'
       if (item.type === 'missing' || item.type === 'string_too_short') return `${label}不能为空。`

@@ -2,6 +2,7 @@ import { createRouter, createWebHistory } from 'vue-router'
 import HomeView from '../views/HomeView.vue'
 import ProjectManagementView from '../views/ProjectManagementView.vue'
 import ExperimentManagementView from '../views/ExperimentManagementView.vue'
+import ExperimentComparisonView from '../views/ExperimentComparisonView.vue'
 
 const router = createRouter({
   history: createWebHistory(),
@@ -9,6 +10,7 @@ const router = createRouter({
     { path: '/', component: HomeView, meta: { title: 'AIExpHub' } },
     { path: '/projects', component: ProjectManagementView, meta: { title: '项目管理' } },
     { path: '/experiments', component: ExperimentManagementView, meta: { title: '实验管理' } },
+    { path: '/compare', component: ExperimentComparisonView, meta: { title: '实验比较' } },
   ],
 })
 

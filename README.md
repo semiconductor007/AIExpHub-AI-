@@ -18,9 +18,9 @@
 
 ## 当前开发阶段
 
-阶段 1 至阶段 4C 已完成。当前为阶段 4D：Experiment + ExperimentResult 前端管理，已完成并验收。完成本阶段后停止，等待下一阶段指令。
+阶段 1 至阶段 4D 已完成。当前为阶段 4E：实验比较前端页面（表格版），已完成并验收。完成本阶段后停止，等待下一阶段指令。
 
-后端提供 `/health` 健康检查、Project、ExperimentBatch 和 Experiment CRUD API，以及 ExperimentResult 首次录入、查询和完整更新 API、多实验比较 API、对应的 Pydantic Schema 与请求级数据库 Session。四个 ORM 模型和业务表已建立，核心 API、数据库约束及比较规则已通过 pytest 自动验收。前端已实现首页健康状态、Project / Batch 管理及 Experiment / Result 管理；Compare 前端、ECharts、Dashboard / 统计尚未实现，当前没有认证或迁移工具。
+后端提供 `/health` 健康检查、Project、ExperimentBatch 和 Experiment CRUD API，以及 ExperimentResult 首次录入、查询和完整更新 API、多实验比较 API、对应的 Pydantic Schema 与请求级数据库 Session。四个 ORM 模型和业务表已建立，核心 API、数据库约束及比较规则已通过 pytest 自动验收。前端已实现首页健康状态、Project / Batch 管理、Experiment / Result 管理和 Experiment Compare 表格页面；ECharts、Dashboard / Statistics 和 AI 分析尚未实现，当前没有认证或迁移工具。
 
 已确认业务设计保留在 [需求边界](docs/requirements.md)、[领域模型](docs/domain-model.md)和[业务校验规则](docs/validation-rules.md)中，阶段安排见 [阶段开发计划](docs/development-plan.md)。
 
@@ -75,7 +75,7 @@ npm run dev
 
 按 Vite 输出的实际地址访问，默认是 `http://localhost:5173`。本阶段实际联调使用 `http://127.0.0.1:5173`。保留并提交 package-lock.json；需要严格按锁文件重新安装时可使用 `npm ci`。
 
-Vue Router 当前提供 `/` 首页、`/projects` 项目管理和 `/experiments` 实验管理。顶部导航标记当前页面，点击 AIExpHub 可回首页。首页加载自动检测后端，显示连接中、服务正常和服务名称，或后端服务不可用；“重新检测”可在后端停止、恢复后更新状态，检测过程中禁用重复点击。
+Vue Router 当前提供 `/` 首页、`/projects` 项目管理、`/experiments` 实验管理和 `/compare` 实验比较。顶部导航标记当前页面，点击 AIExpHub 可回首页。首页加载自动检测后端，显示连接中、服务正常和服务名称，或后端服务不可用；“重新检测”可在后端停止、恢复后更新状态，检测过程中禁用重复点击。
 
 项目管理采用上下两张卡片：项目列表支持新建、编辑、删除和查看批次；批次列表只加载当前选中项目的数据，未选择时不请求批次 API。两类名称提交前 trim 并校验非空，允许同名；创建和完整更新只提交 name / description，空说明传 null。保存后刷新列表，当前选中项目的名称和说明同步更新；删除前确认，成功后刷新，删除选中项目时清空选择与批次。
 
@@ -84,6 +84,8 @@ API 文件复用统一 client，批次创建与列表使用 `/projects/{id}/batc
 实验管理使用项目→批次→实验的选择流程，切换父资源清空下级选择和结果；各层请求计数器阻止过期响应覆盖新选择。项目管理的批次行可通过“管理实验”携带 projectId / batchId 跳转；仅在 ID 合法、项目存在且批次归属匹配时自动选择，否则回退手动选择。列表只请求当前批次的实验，不逐条请求 Result；用户查看结果或创建后自动选中新实验时才加载对应结果。
 
 实验表单对编号 trim + uppercase、模型名称 trim 后检查非空；多行参数使用 JSON.parse 校验为非空对象，允许自由键和嵌套对象。PUT 完整提交四个可编辑字段，空备注传 null，不发送 batch_id。结果未录入的特定 404 显示空状态；首次录入 POST、已有结果 PUT，共用五指标表单。空输入传 null，有限数值须满足范围，至少一项非空且 0 合法；保存后重新 GET 最新结果和更新时间。null 显示 `-`，0 显示 `0`，不转换百分比或固定小数位。删除实验需确认已有结果也将删除，使用已有后端 CASCADE，不提供 Result DELETE。
+
+实验比较分为候选实验、已选实验与比较结果三个区域。候选按项目→批次加载，已选项可跨项目 / 批次保留，以 ID 去重并按加入顺序排列；项目和批次名称作为加入时的本地展示元数据，不写入 localStorage。至少两项才可比较，每次只调用一次 `POST /experiments/compare`，结果表保持响应顺序，名称缺失或关联不符时回退为 Project #ID / Batch #ID，不额外查询名称或结果。无 Result 的实验保留且明确标识，缺失指标显示 `-`、0 显示 `0`；最佳标签、并列摘要和方向完全使用后端 best_by_metric，不在前端重算。添加、移除或清空选择会清空旧比较结果，请求期间禁用选择修改；重新比较重新读取当前 Result。失效实验的 404 和比较 422 显示中文，错误时保留选择供手动修正；此页面不修改实验或结果，不保存比较历史。
 
 所有 API 调用通过统一 Axios client（baseURL=`/api`，timeout=10000ms），HealthResponse 和 getHealth() 有明确类型。Vite 开发代理将 `/api` 请求转发至 `http://127.0.0.1:8000` 并移除前缀，例如 `/api/health` → `/health`，参见 [Vite proxy 文档](https://vite.dev/config/server-options.html#server-proxy)。浏览器始终请求前端同源路径，后端没有添加 CORS，未加入认证拦截器、重试或缓存；部署配置留待后续确定。
 
@@ -142,6 +144,8 @@ build 执行 `vue-tsc -b && vite build`，先类型检查，再生成 `frontend/
 
 阶段 4D 已通过 A–AH 真实浏览器验收，覆盖层级选择、实验 CRUD、JSON 校验、编号重复中文提示、结果录入与完整更新、null / 0、合法边界、更新时间、删除级联、批次删除限制和后端断开 / 恢复。另验证非法或归属不符的 query 回退、嵌套参数和并发首次录入的 409 恢复；通过实际 HTTP 访问日志核对列表无 Result N+1 请求。前端类型检查与构建成功，后端仍为 102 passed。临时数据通过现有 API 按 Experiment→Batch→Project 清理，四表最终为空；未修改后端生产代码、数据库设计、依赖或冻结规则。
 
+阶段 4E 已通过 A–AI 真实浏览器验收：跨项目 / 批次保留选择、加入顺序、去重、null / 无 Result / 0、并列 Precision、Loss 最小、另一标签修改结果后不重选即读取新最佳值、失效实验 404 及手动恢复、后端断开 / 恢复、清空旧结果及重新加入均正常。另验证无项目 / 批次 / 实验空状态、快速切换不串候选，以及真实 422 经前端工具转换为中文；HTTP 访问日志确认比较只有一次 POST，无逐实验 Result 请求。npm run build 成功，后端仍为 102 passed。临时数据通过现有 API 清理，最终四表均为 0；未增加依赖或修改后端、数据库与冻结规则。
+
 ## 基础目录结构
 
 ```text
@@ -174,7 +178,7 @@ AIExpHub/
 │   ├── pytest.ini
 │   ├── requirements-dev.txt
 │   └── requirements.txt
-├── frontend/                # 首页、项目 / 批次 / 实验 / 结果管理
+├── frontend/                # 首页、业务管理与实验比较表格
 │   ├── src/
 │   │   ├── api/
 │   │   │   ├── client.ts
@@ -183,13 +187,15 @@ AIExpHub/
 │   │   │   ├── batches.ts
 │   │   │   ├── experiments.ts
 │   │   │   ├── results.ts
+│   │   │   ├── compare.ts
 │   │   │   └── errors.ts
 │   │   ├── router/
 │   │   │   └── index.ts
 │   │   ├── views/
 │   │   │   ├── HomeView.vue
 │   │   │   ├── ProjectManagementView.vue
-│   │   │   └── ExperimentManagementView.vue
+│   │   │   ├── ExperimentManagementView.vue
+│   │   │   └── ExperimentComparisonView.vue
 │   │   ├── utils/
 │   │   │   └── datetime.ts
 │   │   ├── App.vue
