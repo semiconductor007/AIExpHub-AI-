@@ -10,7 +10,7 @@
 | --- | --- |
 | 前端 | Vue 3 + Vite + TypeScript，Vue Router，Axios（基础工程已初始化） |
 | UI | Element Plus（当前全量注册） |
-| 图表 | ECharts（计划采用，尚未安装） |
+| 图表 | ECharts 6.1.0（按模块引入，Canvas 渲染） |
 | 后端 | Python 3.12 + FastAPI + Uvicorn + Pydantic v2 |
 | ORM | SQLAlchemy 2.x（已建立四个业务模型与数据库约束） |
 | 数据库 | SQLite |
@@ -18,9 +18,9 @@
 
 ## 当前开发阶段
 
-阶段 1 至阶段 4D 已完成。当前为阶段 4E：实验比较前端页面（表格版），已完成并验收。完成本阶段后停止，等待下一阶段指令。
+阶段 1 至阶段 4E 已完成。当前为阶段 5A：ECharts 实验比较可视化，图表实现与可执行的联调验收已完成；实际浏览器窗口宽度调整的人工验收仍待补充，详见下方验证记录。完成本阶段工作后停止，等待下一阶段指令。
 
-后端提供 `/health` 健康检查、Project、ExperimentBatch 和 Experiment CRUD API，以及 ExperimentResult 首次录入、查询和完整更新 API、多实验比较 API、对应的 Pydantic Schema 与请求级数据库 Session。四个 ORM 模型和业务表已建立，核心 API、数据库约束及比较规则已通过 pytest 自动验收。前端已实现首页健康状态、Project / Batch 管理、Experiment / Result 管理和 Experiment Compare 表格页面；ECharts、Dashboard / Statistics 和 AI 分析尚未实现，当前没有认证或迁移工具。
+后端提供 `/health` 健康检查、Project、ExperimentBatch 和 Experiment CRUD API，以及 ExperimentResult 首次录入、查询和完整更新 API、多实验比较 API、对应的 Pydantic Schema 与请求级数据库 Session。四个 ORM 模型和业务表已建立，核心 API、数据库约束及比较规则已通过 pytest 自动验收。前端已实现首页健康状态、Project / Batch 管理、Experiment / Result 管理、Experiment Compare 表格和 ECharts 指标比较可视化；Dashboard / Statistics、AI 分析与比较历史尚未实现，当前没有认证或迁移工具。
 
 已确认业务设计保留在 [需求边界](docs/requirements.md)、[领域模型](docs/domain-model.md)和[业务校验规则](docs/validation-rules.md)中，阶段安排见 [阶段开发计划](docs/development-plan.md)。
 
@@ -96,6 +96,10 @@ npm run preview
 
 build 执行 `vue-tsc -b && vite build`，先类型检查，再生成 `frontend/dist/`。Element Plus 按本阶段要求全量注册，构建有大于 500 kB 的 JS chunk 提示，构建成功；没有添加按需导入或包优化插件。node_modules、dist 和 TS 构建缓存均由根目录 .gitignore 忽略。
 
+比较结果按“最佳指标摘要 → 可视化 → 精确表格”展示。ComparisonCharts.vue 只接收同一份 Compare Response，不请求 API、不计算最优值；Accuracy / Precision / Recall / F1 使用四系列分组柱状图，Y 轴固定 0–1，Loss 使用独立的自适应数值轴（下界为 0）。横轴保持响应中的实验编号顺序，长编号旋转并截断。null 保持缺失、0 保留真实数值，Tooltip 显示原始值或 `-`，不转百分比或归一化。
+
+最佳与并列最佳仅根据 best_by_metric.experiment_ids 显示柱顶标签，loss=0 时标签仍位于零轴上方。综合四项全空或 Loss 全空时分别显示独立空状态。重新比较期间使用加载遮罩，成功后表格与图表同时更新；失败或选择变化清空旧结果。组件复用实例并使用 setOption(notMerge)、ResizeObserver.resize，卸载时 disconnect / dispose。仅新增直接依赖 echarts，采用官方 BarChart、GridComponent、TooltipComponent、LegendComponent、CanvasRenderer 模块；未引入图表包装库或打包插件，初始化及尺寸管理参考 [ECharts 官方说明](https://echarts.apache.org/handbook/en/basics/import/)。
+
 ## 后端测试
 
 在 `backend` 目录使用现有 Python 3.12 虚拟环境安装开发依赖并运行：
@@ -146,6 +150,8 @@ build 执行 `vue-tsc -b && vite build`，先类型检查，再生成 `frontend/
 
 阶段 4E 已通过 A–AI 真实浏览器验收：跨项目 / 批次保留选择、加入顺序、去重、null / 无 Result / 0、并列 Precision、Loss 最小、另一标签修改结果后不重选即读取新最佳值、失效实验 404 及手动恢复、后端断开 / 恢复、清空旧结果及重新加入均正常。另验证无项目 / 批次 / 实验空状态、快速切换不串候选，以及真实 422 经前端工具转换为中文；HTTP 访问日志确认比较只有一次 POST，无逐实验 Result 请求。npm run build 成功，后端仍为 102 passed。临时数据通过现有 API 清理，最终四表均为 0；未增加依赖或修改后端、数据库与冻结规则。
 
+阶段 5A 已通过真实浏览器 A–Z、AB–AF：四项分组柱、独立 Loss、null / 无 Result / 0、并列标签、Loss=0 的可见最佳、Loss=2.5、两类全空状态、另一标签修改 accuracy 后同步更新、选择清空及网络恢复均正常。另验证八个实验与长编号；重新比较实例 ID 保持不变，路由切换后每图仅一个 canvas，无 ECharts / dispose 错误。一次比较的 HTTP 访问日志只有一条 Compare POST，没有额外 Result GET。AA 使用临时容器宽度从 1110px 收窄至 777px 再恢复来验证 ResizeObserver，画布与容器宽度一致、实例不重建且无横向溢出，临时样式已撤回；当前预览工具未能调整实际浏览器窗口，因此 AA 的窗口调整步骤仍待人工确认。npm run build 类型检查及构建成功，JS chunk 为 1,606.83 kB（gzip 526.00 kB），保留 >500 kB warning，不调整打包策略；后端仍为 102 passed。临时数据通过现有 API 按 Experiment→Batch→Project 清理，最终四表均为 0；未修改后端生产代码、依赖、数据库或冻结规则。
+
 ## 基础目录结构
 
 ```text
@@ -178,7 +184,7 @@ AIExpHub/
 │   ├── pytest.ini
 │   ├── requirements-dev.txt
 │   └── requirements.txt
-├── frontend/                # 首页、业务管理与实验比较表格
+├── frontend/                # 首页、业务管理、比较表格与图表
 │   ├── src/
 │   │   ├── api/
 │   │   │   ├── client.ts
@@ -198,6 +204,8 @@ AIExpHub/
 │   │   │   └── ExperimentComparisonView.vue
 │   │   ├── utils/
 │   │   │   └── datetime.ts
+│   │   ├── components/
+│   │   │   └── ComparisonCharts.vue
 │   │   ├── App.vue
 │   │   ├── main.ts
 │   │   └── style.css

@@ -11,6 +11,7 @@ import type { Experiment } from '../api/experiments'
 import { compareExperiments } from '../api/compare'
 import type { ComparisonExperiment, ExperimentCompareResponse, MetricName } from '../api/compare'
 import { getApiErrorMessage } from '../api/errors'
+import ComparisonCharts from '../components/ComparisonCharts.vue'
 
 interface SelectedExperiment {
   id: number
@@ -171,13 +172,13 @@ async function startComparison(): Promise<void> {
   const request = ++compareRequest
   const ids = selectedExperiments.value.map(experiment => experiment.id)
   compareLoading.value = true
-  comparisonResult.value = null
   compareError.value = ''
   try {
     const response = await compareExperiments(ids)
     if (request === compareRequest) comparisonResult.value = response
   } catch (error: unknown) {
     if (request === compareRequest) {
+      comparisonResult.value = null
       compareError.value = getApiErrorMessage(error, '实验比较失败，请重试。')
       ElMessage.error(compareError.value)
     }
@@ -294,6 +295,7 @@ onBeforeUnmount(() => { projectRequest += 1; batchRequest += 1; experimentReques
             <span v-else>最佳 {{ comparisonResult.best_by_metric[metric.key].value }}<span v-if="comparisonResult.best_by_metric[metric.key].experiment_ids.length > 1">（{{ comparisonResult.best_by_metric[metric.key].experiment_ids.length }} 个实验并列）</span></span>
           </li>
         </ul>
+        <ComparisonCharts :result="comparisonResult" />
         <el-table :data="comparisonResult.experiments" row-key="id" aria-label="实验比较结果列表">
           <el-table-column prop="experiment_no" label="实验编号" min-width="120" show-overflow-tooltip />
           <el-table-column prop="model_name" label="模型名称" min-width="120" show-overflow-tooltip />
