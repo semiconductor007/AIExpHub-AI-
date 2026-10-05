@@ -14,13 +14,13 @@
 | 后端 | Python 3.12 + FastAPI + Uvicorn + Pydantic v2 |
 | ORM | SQLAlchemy 2.x（已建立四个业务模型与数据库约束） |
 | 数据库 | SQLite |
-| 测试 | pytest（计划使用，当前未安装或编写） |
+| 测试 | pytest + httpx / FastAPI TestClient（已建立后端验收测试） |
 
 ## 当前开发阶段
 
-阶段 1、阶段 2、阶段 2.5、阶段 3A、阶段 3B、阶段 3C、阶段 3D 已完成。当前为阶段 3E：ExperimentResult API。
+阶段 1、阶段 2、阶段 2.5、阶段 3A、阶段 3B、阶段 3C、阶段 3D、阶段 3E 已完成。当前为阶段 3F：后端 pytest 自动化验收。
 
-后端提供 `/health` 健康检查、Project、ExperimentBatch 和 Experiment CRUD API，以及 ExperimentResult 首次录入、查询和完整更新 API、对应的 Pydantic Schema 与请求级数据库 Session。四个 ORM 模型和业务表已建立；比较、统计及前端功能尚未实现。当前没有 pytest、认证或迁移工具。
+后端提供 `/health` 健康检查、Project、ExperimentBatch 和 Experiment CRUD API，以及 ExperimentResult 首次录入、查询和完整更新 API、对应的 Pydantic Schema 与请求级数据库 Session。四个 ORM 模型和业务表已建立，核心 API 与数据库约束已通过 pytest 自动验收；比较、统计及前端功能尚未实现，当前没有认证或迁移工具。
 
 已确认业务设计保留在 [需求边界](docs/requirements.md)、[领域模型](docs/domain-model.md)和[业务校验规则](docs/validation-rules.md)中，阶段安排见 [阶段开发计划](docs/development-plan.md)。
 
@@ -58,6 +58,21 @@ python -m venv .venv
 `/health` 每次请求通过数据库会话执行 `SELECT 1`。成功返回 HTTP 200 和 `{"status":"ok","service":"AIExpHub API"}`；数据库连接失败返回 HTTP 503。按 `Ctrl+C` 停止服务。
 
 SQLite 路径由 `app/database.py` 的实际位置计算，固定为 `backend/data/aiexphub.db`，不受启动时当前目录影响。`.venv`、Python 缓存及数据库文件均由现有 `.gitignore` 忽略。
+
+## 后端测试
+
+在 `backend` 目录使用现有 Python 3.12 虚拟环境安装开发依赖并运行：
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install -r requirements-dev.txt
+.\.venv\Scripts\python.exe -m pytest -q
+```
+
+激活虚拟环境后也可使用 `pip install -r requirements-dev.txt` 和 `python -m pytest -q`，或直接 `pytest -q`。
+
+测试通过 FastAPI TestClient 调用实际 HTTP 层，每个用例使用独立的 `tmp_path/test.db` SQLite 数据库并开启外键。Router 的 get_db 和健康检查的 Session 均指向测试数据库；TestClient 不进入生产 lifespan，测试守卫禁止生产 engine 连接或 init_db 执行。测试不会读取、清空或修改 `backend/data/aiexphub.db`。临时目录由 pytest 管理，结束后关闭会话、清空 dependency overrides 并 dispose 测试 engine。
+
+开发依赖固定 pytest 9.1.1、httpx 0.28.1，不改变生产运行依赖。当前有 60 个用例，覆盖 Project / Batch / Experiment / Result 的核心规则和数据库第二层约束；测试文件可独立执行。现有 Starlette 1.7.0 会提示 TestClient 使用 httpx 的第三方弃用 warning，调用仍正常，未为消除 warning 升级框架或加入其他测试依赖。
 
 ## 当前数据库层
 
@@ -103,6 +118,16 @@ AIExpHub/
 │   │       └── results.py
 │   ├── data/
 │   │   └── .gitkeep         # aiexphub.db 为运行时文件，不提交
+│   ├── tests/
+│   │   ├── conftest.py
+│   │   ├── test_health.py
+│   │   ├── test_projects.py
+│   │   ├── test_batches.py
+│   │   ├── test_experiments.py
+│   │   ├── test_results.py
+│   │   └── test_database_constraints.py
+│   ├── pytest.ini
+│   ├── requirements-dev.txt
 │   └── requirements.txt
 ├── frontend/                # 前端工程预留目录
 │   └── .gitkeep
