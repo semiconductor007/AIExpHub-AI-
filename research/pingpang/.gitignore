@@ -1,7 +1,0 @@
-# 实验运行产物保存在本地
-/experiments/artifacts/
-/participant/**/weights/
-/participant/**/public_data/
-*.engine
-*.mp4
-*.npz
