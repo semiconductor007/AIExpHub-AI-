@@ -1,0 +1,2 @@
+# 基线快照保留原始字节，避免换行转换改变 SHA256
+experiments/baselines/official_v0/*.py -text
