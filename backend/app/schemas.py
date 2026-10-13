@@ -204,6 +204,7 @@ class ExperimentCompareRequest(BaseModel):
     experiment_ids: list[Annotated[int, Field(strict=True, gt=0)]] = Field(
         strict=True, min_length=2
     )
+    baseline_experiment_id: Annotated[int, Field(strict=True, gt=0)] | None = None
 
     @field_validator("experiment_ids")
     @classmethod
@@ -211,6 +212,12 @@ class ExperimentCompareRequest(BaseModel):
         if len(set(value)) != len(value):
             raise ValueError("experiment_ids must not contain duplicates")
         return value
+
+    @model_validator(mode="after")
+    def require_selected_baseline(self) -> Self:
+        if self.baseline_experiment_id is not None and self.baseline_experiment_id not in self.experiment_ids:
+            raise ValueError("基准实验必须属于已选实验")
+        return self
 
 
 class ComparisonResultMetrics(BaseModel):
@@ -254,7 +261,33 @@ class CustomMetricComparison(BaseModel):
     best: BestMetric
 
 
+class MetricDelta(BaseModel):
+    delta: FiniteMetric | None
+    status: Literal["improved", "regressed", "unchanged", "unavailable"]
+    reason: Literal[
+        "baseline_project_mismatch", "experiment_project_mismatch",
+        "baseline_result_missing", "experiment_result_missing",
+        "baseline_metric_missing", "experiment_metric_missing", "overflow",
+    ] | None = None
+
+
+class BaselineMetricComparison(BaseModel):
+    key: str
+    project_id: int | None
+    name: str
+    unit: str
+    direction: Literal["max", "min"]
+    baseline_value: FiniteMetric | None
+    comparisons: dict[int, MetricDelta]
+
+
+class BaselineComparison(BaseModel):
+    baseline_experiment_id: int
+    metrics: list[BaselineMetricComparison]
+
+
 class ExperimentCompareResponse(BaseModel):
     experiments: list[ComparisonExperiment]
     best_by_metric: ComparisonBestByMetric
     custom_metrics: list[CustomMetricComparison] = Field(default_factory=list, exclude_if=lambda value: not value)
+    baseline_comparison: BaselineComparison | None = Field(default=None, exclude_if=lambda value: value is None)

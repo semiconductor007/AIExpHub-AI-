@@ -7,6 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
 
 from app.database import get_db
+from app.comparison_deltas import build_baseline_comparison
 from app.models import Experiment, ExperimentBatch, Project
 from app.schemas import (
     BestMetric,
@@ -95,6 +96,8 @@ def compare_experiments(
     return ExperimentCompareResponse(
         experiments=experiments,
         custom_metrics=custom_metrics,
+        baseline_comparison=(build_baseline_comparison(experiments, custom_metrics, payload.baseline_experiment_id)
+                             if payload.baseline_experiment_id is not None else None),
         best_by_metric=ComparisonBestByMetric(
             accuracy=_best_metric(experiments, "accuracy", "max"),
             precision=_best_metric(experiments, "precision", "max"),

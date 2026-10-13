@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { getProjects } from '../api/projects'
@@ -15,6 +15,7 @@ import ComparisonCharts from '../components/ComparisonCharts.vue'
 import CustomMetricChart from '../components/CustomMetricChart.vue'
 import { metricLabel } from '../api/metrics'
 import type { CustomMetricComparison } from '../api/compare'
+import MetricDeltaDisplay from '../components/MetricDeltaDisplay.vue'
 
 interface SelectedExperiment {
   id: number
@@ -38,6 +39,10 @@ const selectedBatch = computed(() => batches.value.find(batch => batch.id === ba
 const selectedExperiments = ref<SelectedExperiment[]>([])
 const selectedById = computed(() => new Map(selectedExperiments.value.map(experiment => [experiment.id, experiment])))
 const comparisonResult = ref<ExperimentCompareResponse | null>(null)
+const baselineId = ref<number | null>(null)
+const baselineExperiment = computed(() => comparisonResult.value?.experiments.find(item => item.id === comparisonResult.value?.baseline_comparison?.baseline_experiment_id))
+const deltaMetrics = computed(() => new Map((comparisonResult.value?.baseline_comparison?.metrics ?? []).map(metric => [`${metric.project_id ?? 'system'}:${metric.key}`, metric])))
+const isCrossProject = computed(() => new Set(comparisonResult.value?.experiments.map(item => item.project_id)).size > 1)
 const projectsLoading = ref(false)
 const batchesLoading = ref(false)
 const experimentsLoading = ref(false)
@@ -149,6 +154,12 @@ function clearComparison(): void {
   compareError.value = ''
 }
 
+watch(baselineId, clearComparison, { flush: 'sync' })
+
+function deltaValue(experimentId: number, key: string, project: number | null = null) {
+  return deltaMetrics.value.get(`${project ?? 'system'}:${key}`)?.comparisons[experimentId]
+}
+
 function addExperiment(experiment: Experiment): void {
   if (compareLoading.value || selectedById.value.has(experiment.id) || !selectedProject.value || !selectedBatch.value) return
   if (experiment.batch_id !== selectedBatch.value.id) return
@@ -163,12 +174,14 @@ function addExperiment(experiment: Experiment): void {
 function removeExperiment(id: number): void {
   if (compareLoading.value) return
   selectedExperiments.value = selectedExperiments.value.filter(experiment => experiment.id !== id)
+  if (baselineId.value === id) baselineId.value = null
   clearComparison()
 }
 
 function clearSelection(): void {
   if (compareLoading.value) return
   selectedExperiments.value = []
+  baselineId.value = null
   clearComparison()
 }
 
@@ -176,10 +189,11 @@ async function startComparison(): Promise<void> {
   if (compareLoading.value || selectedExperiments.value.length < 2) return
   const request = ++compareRequest
   const ids = selectedExperiments.value.map(experiment => experiment.id)
+  const baseline = baselineId.value
   compareLoading.value = true
   compareError.value = ''
   try {
-    const response = await compareExperiments(ids)
+    const response = await compareExperiments(ids, baseline)
     if (request === compareRequest) comparisonResult.value = response
   } catch (error: unknown) {
     if (request === compareRequest) {
@@ -281,8 +295,15 @@ onBeforeUnmount(() => { projectRequest += 1; batchRequest += 1; experimentReques
     <el-empty v-if="selectedExperiments.length === 0" description="请从上方候选实验中加入需要比较的实验。" />
     <template v-else>
       <p v-if="selectedExperiments.length === 1" class="hint">还需至少选择 1 个实验。</p>
+      <div class="baseline-selector">
+        <label for="compare-baseline">基准实验（可选）</label>
+        <el-select id="compare-baseline" v-model="baselineId" aria-label="基准实验" clearable :value-on-clear="null" :disabled="compareLoading" placeholder="不选择基准，只比较原始指标">
+          <el-option v-for="experiment in selectedExperiments" :key="experiment.id" :value="experiment.id" :label="`${experiment.experiment_no} / ${experiment.project_name}`" />
+        </el-select>
+        <p class="hint">选择后点击开始比较。差值为当前实验减基准，按指标方向判断改善或退步；缺失值不补 0。</p>
+      </div>
       <el-table :data="selectedExperiments" row-key="id" aria-label="已选实验列表">
-        <el-table-column prop="experiment_no" label="实验编号" min-width="140" show-overflow-tooltip />
+        <el-table-column label="实验编号" min-width="160" show-overflow-tooltip><template #default="{ row }"><div class="metric-cell">{{ row.experiment_no }}<el-tag v-if="row.id === baselineId" type="warning" size="small">基准</el-tag></div></template></el-table-column>
         <el-table-column prop="model_name" label="模型名称" min-width="140" show-overflow-tooltip />
         <el-table-column prop="project_name" label="项目" min-width="180" show-overflow-tooltip />
         <el-table-column prop="batch_name" label="批次" min-width="180" show-overflow-tooltip />
@@ -297,6 +318,8 @@ onBeforeUnmount(() => { projectRequest += 1; batchRequest += 1; experimentReques
       <el-alert v-if="compareError" :title="compareError" type="error" :closable="false" show-icon />
       <el-empty v-else-if="!comparisonResult" description="选择至少两个实验后开始比较。" />
       <template v-else>
+        <p v-if="baselineExperiment" class="hint baseline-summary">相对基准：{{ baselineExperiment.experiment_no }}。表格保留原始指标，并显示绝对差值和状态；图表仍展示原始数值。</p>
+        <el-alert v-if="baselineExperiment && isCrossProject" title="系统指标的跨项目差值仅作数值对照，请确认评测条件一致；自定义指标只在所属项目内计算差值。" type="info" :closable="false" show-icon />
         <ul class="best-summary" aria-label="最佳指标摘要">
           <li v-for="metric in metrics" :key="metric.key">
             <span>{{ metric.label }}：</span>
@@ -304,7 +327,6 @@ onBeforeUnmount(() => { projectRequest += 1; batchRequest += 1; experimentReques
             <span v-else>最佳 {{ comparisonResult.best_by_metric[metric.key].value }}<span v-if="comparisonResult.best_by_metric[metric.key].experiment_ids.length > 1">（{{ comparisonResult.best_by_metric[metric.key].experiment_ids.length }} 个实验并列）</span></span>
           </li>
         </ul>
-        <ComparisonCharts v-if="showBuiltinCharts" :result="comparisonResult" />
         <template v-if="comparisonResult.custom_metrics?.length">
           <h3>项目自定义指标</h3>
           <ul class="best-summary" aria-label="自定义指标最佳摘要">
@@ -314,21 +336,22 @@ onBeforeUnmount(() => { projectRequest += 1; batchRequest += 1; experimentReques
               <span v-else>最佳 {{ metric.best.value }}<span v-if="metric.best.experiment_ids.length > 1">（{{ metric.best.experiment_ids.length }} 个实验并列）</span></span>
             </li>
           </ul>
-          <CustomMetricChart v-for="metric in comparisonResult.custom_metrics" :key="`${metric.definition.project_id}:${metric.definition.key}`" :metric="metric" :experiments="comparisonResult.experiments" />
         </template>
         <el-table :data="comparisonResult.experiments" row-key="id" aria-label="实验比较结果列表">
-          <el-table-column prop="experiment_no" label="实验编号" min-width="120" show-overflow-tooltip />
+          <el-table-column label="实验编号" min-width="140" show-overflow-tooltip><template #default="{ row }"><div class="metric-cell">{{ row.experiment_no }}<el-tag v-if="row.id === comparisonResult.baseline_comparison?.baseline_experiment_id" type="warning" size="small">基准</el-tag></div></template></el-table-column>
           <el-table-column prop="model_name" label="模型名称" min-width="120" show-overflow-tooltip />
           <el-table-column label="项目" min-width="120" show-overflow-tooltip><template #default="{ row }">{{ projectName(row) }}</template></el-table-column>
           <el-table-column label="批次" min-width="110" show-overflow-tooltip><template #default="{ row }">{{ batchName(row) }}</template></el-table-column>
-          <el-table-column v-for="metric in comparisonResult.custom_metrics ?? []" :key="`${metric.definition.project_id}:${metric.definition.key}`" :label="customMetricHeading(metric)" min-width="180">
-            <template #default="{ row }"><div class="metric-cell"><span>{{ metric.values[row.id] ?? '-' }}</span><el-tag v-if="metric.best.experiment_ids.includes(row.id)" type="success" size="small">最佳</el-tag></div></template>
+          <el-table-column v-for="metric in comparisonResult.custom_metrics ?? []" :key="`${metric.definition.project_id}:${metric.definition.key}`" :label="customMetricHeading(metric)" :min-width="comparisonResult.baseline_comparison ? 220 : 180">
+            <template #default="{ row }"><div class="metric-cell"><span>{{ metric.values[row.id] ?? '-' }}</span><el-tag v-if="metric.best.experiment_ids.includes(row.id)" type="success" size="small">最佳</el-tag></div><MetricDeltaDisplay v-if="comparisonResult.baseline_comparison" :value="deltaValue(row.id, metric.definition.key, metric.definition.project_id)" :unit="metric.definition.unit" /></template>
           </el-table-column>
-          <el-table-column v-for="metric in metrics" :key="metric.key" :label="metricHeading(metric.key, metric.label)" min-width="106">
-            <template #default="{ row }"><div class="metric-cell"><span>{{ metricValue(row, metric.key) }}</span><el-tag v-if="isBest(row.id, metric.key)" type="success" size="small">最佳</el-tag></div></template>
+          <el-table-column v-for="metric in metrics" :key="metric.key" :label="metricHeading(metric.key, metric.label)" :min-width="comparisonResult.baseline_comparison ? 180 : 106">
+            <template #default="{ row }"><div class="metric-cell"><span>{{ metricValue(row, metric.key) }}</span><el-tag v-if="isBest(row.id, metric.key)" type="success" size="small">最佳</el-tag></div><MetricDeltaDisplay v-if="comparisonResult.baseline_comparison" :value="deltaValue(row.id, metric.key)" /></template>
           </el-table-column>
           <el-table-column label="结果状态" width="110"><template #default="{ row }"><el-tag :type="row.result === null ? 'info' : 'success'" size="small">{{ row.result === null ? '未录入结果' : '已录入结果' }}</el-tag></template></el-table-column>
         </el-table>
+        <ComparisonCharts v-if="showBuiltinCharts" :result="comparisonResult" />
+        <CustomMetricChart v-for="metric in comparisonResult.custom_metrics ?? []" :key="`${metric.definition.project_id}:${metric.definition.key}`" :metric="metric" :experiments="comparisonResult.experiments" />
       </template>
     </div>
   </el-card>
@@ -338,5 +361,9 @@ onBeforeUnmount(() => { projectRequest += 1; batchRequest += 1; experimentReques
 .hint { color: #6b7280; line-height: 1.7; }
 .result-content { min-height: 120px; }
 .metric-cell { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.baseline-selector { margin-bottom: 16px; }
+.baseline-selector label { display: block; margin-bottom: 8px; font-weight: 600; }
+.baseline-selector .el-select { width: min(100%, 520px); }
+.baseline-summary { margin-top: 0; }
 .best-summary { display: flex; flex-wrap: wrap; gap: 12px 24px; list-style: none; margin: 0 0 20px; padding: 0; color: #4b5563; font-size: 14px; line-height: 1.8; }
 </style>

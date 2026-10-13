@@ -4,6 +4,8 @@
 
 同日新增 [JSON 导入 API](json-file-import.md#新增-api)：项目模板、批次导入预览及整批新增。仅接收 JSON，不覆盖已有实验；不改原 CRUD 或数据库关系。
 
+后续 I1 已扩展现有 Compare 请求的可选 baseline_experiment_id 与响应的可选 baseline_comparison，见 [基准比较 API](baseline-comparison.md#比较-api-扩展)。未选基准时响应保持兼容，不新增路径。
+
 本地地址：`http://127.0.0.1:8000`。Swagger：`/docs`，OpenAPI：`/openapi.json`。Swagger 标签为 Health、Projects、Experiment Batches、Experiments、Experiment Results、Experiment Comparison。
 
 ## 接口列表
