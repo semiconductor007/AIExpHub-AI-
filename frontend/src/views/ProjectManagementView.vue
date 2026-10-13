@@ -9,6 +9,7 @@ import { createBatch, deleteBatch, getProjectBatches, updateBatch } from '../api
 import type { ExperimentBatch } from '../api/batches'
 import { getApiErrorMessage } from '../api/errors'
 import { formatDateTime } from '../utils/datetime'
+import ProjectMetrics from '../components/ProjectMetrics.vue'
 
 const router = useRouter()
 
@@ -233,6 +234,8 @@ onMounted(loadProjects)
       </el-table>
     </template>
   </el-card>
+
+  <ProjectMetrics :project-id="selectedProject?.id ?? null" :project-name="selectedProject?.name" />
 
   <el-dialog v-model="dialogVisible" :title="dialogTitle" width="min(520px, 92vw)"
              :close-on-click-modal="!submitting" :close-on-press-escape="!submitting" :show-close="!submitting">

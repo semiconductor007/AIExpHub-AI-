@@ -9,6 +9,7 @@ export interface ExperimentResult {
   f1: number | null
   loss: number | null
   updated_at: string
+  custom_metrics?: Record<string, number>
 }
 
 export interface ResultPayload {
@@ -17,9 +18,11 @@ export interface ResultPayload {
   recall?: number | null
   f1?: number | null
   loss?: number | null
+  custom_metrics?: Record<string, number | null>
 }
 
-export type ResultMetric = 'accuracy' | 'precision' | 'recall' | 'f1' | 'loss'
+export type BuiltinMetric = 'accuracy' | 'precision' | 'recall' | 'f1' | 'loss'
+export type ResultMetric = string
 
 export async function getExperimentResult(experimentId: number): Promise<ExperimentResult> {
   return (await client.get<ExperimentResult>(`/experiments/${experimentId}/result`)).data

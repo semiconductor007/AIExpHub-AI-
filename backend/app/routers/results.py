@@ -9,7 +9,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models import Experiment, ExperimentResult
+from app.models import Experiment, ExperimentBatch, ExperimentResult, ProjectMetric
 from app.schemas import (
     ExperimentResultCreate,
     ExperimentResultRead,
@@ -20,6 +20,25 @@ from app.schemas import (
 router = APIRouter(tags=["Experiment Results"])
 DbSession = Annotated[Session, Depends(get_db)]
 RESULT_CONFLICT = "Experiment result already exists"
+
+
+def _result_payload(experiment: Experiment, payload, db: Session) -> dict:
+    values = payload.custom_metrics
+    project_id = db.scalar(select(ExperimentBatch.project_id).where(ExperimentBatch.id == experiment.batch_id))
+    definitions = {metric.key: metric for metric in db.scalars(
+        select(ProjectMetric).where(ProjectMetric.project_id == project_id)
+    )} if values else {}
+    for key, value in values.items():
+        if key not in definitions:
+            raise HTTPException(422, f"项目未定义指标：{key}，请先在项目管理中添加")
+        definition = definitions[key]
+        if value is not None and ((definition.lower_bound is not None and value < definition.lower_bound)
+                                  or (definition.upper_bound is not None and value > definition.upper_bound)):
+            raise HTTPException(422, f"指标 {definition.name} 超出范围 [{definition.lower_bound if definition.lower_bound is not None else '不限'}, {definition.upper_bound if definition.upper_bound is not None else '不限'}]")
+    data = payload.model_dump()
+    # Missing values stay absent in storage; comparison exposes them as null.
+    data["custom_metrics"] = {key: value for key, value in values.items() if value is not None}
+    return data
 
 
 def _get_experiment_or_404(experiment_id: int, db: Session) -> Experiment:
@@ -64,10 +83,10 @@ def _commit_or_conflict(db: Session) -> None:
 def create_result(
     experiment_id: int, payload: ExperimentResultCreate, db: DbSession
 ) -> ExperimentResult:
-    _get_experiment_or_404(experiment_id, db)
+    experiment = _get_experiment_or_404(experiment_id, db)
     if _find_result(experiment_id, db) is not None:
         raise HTTPException(status_code=409, detail=RESULT_CONFLICT)
-    result = ExperimentResult(experiment_id=experiment_id, **payload.model_dump())
+    result = ExperimentResult(experiment_id=experiment_id, **_result_payload(experiment, payload, db))
     db.add(result)
     _commit_or_conflict(db)
     return result
@@ -83,10 +102,10 @@ def get_result(experiment_id: int, db: DbSession) -> ExperimentResult:
 def update_result(
     experiment_id: int, payload: ExperimentResultUpdate, db: DbSession
 ) -> ExperimentResult:
-    _get_experiment_or_404(experiment_id, db)
+    experiment = _get_experiment_or_404(experiment_id, db)
     result = _get_result_or_404(experiment_id, db)
     # Include default None values: PUT clears every omitted metric.
-    for field, value in payload.model_dump().items():
+    for field, value in _result_payload(experiment, payload, db).items():
         setattr(result, field, value)
     _commit_or_conflict(db)
     return result

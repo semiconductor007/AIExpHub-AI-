@@ -10,7 +10,9 @@ import type { ExperimentBatch } from '../api/batches'
 import { createExperiment, deleteExperiment, getBatchExperiments, updateExperiment } from '../api/experiments'
 import type { Experiment } from '../api/experiments'
 import { createExperimentResult, getExperimentResult, updateExperimentResult } from '../api/results'
-import type { ExperimentResult, ResultMetric, ResultPayload } from '../api/results'
+import type { BuiltinMetric, ExperimentResult, ResultMetric, ResultPayload } from '../api/results'
+import { getProjectMetrics, metricLabel } from '../api/metrics'
+import type { MetricDefinition } from '../api/metrics'
 import { getApiErrorMessage, isApiErrorDetail } from '../api/errors'
 import { formatDateTime } from '../utils/datetime'
 
@@ -35,6 +37,10 @@ const experimentDeleting = ref(false)
 const busy = computed(() => experimentSubmitting.value || resultSubmitting.value || experimentDeleting.value)
 const projectsError = ref('')
 const batchesError = ref('')
+const metricDefinitions = ref<MetricDefinition[]>([])
+const metricsLoading = ref(false)
+const metricsError = ref('')
+let metricRequest = 0
 const experimentsError = ref('')
 const resultError = ref('')
 let contextRequest = 0
@@ -64,12 +70,30 @@ function clearExperiments(): void {
 }
 
 function clearBatches(): void {
+  metricRequest += 1
+  metricDefinitions.value = []
+  metricsError.value = ''
+  metricsLoading.value = false
   batchRequest += 1
   batchId.value = null
   batches.value = []
   batchesError.value = ''
   batchesLoading.value = false
   clearExperiments()
+}
+
+async function loadMetricDefinitions(): Promise<void> {
+  const target = projectId.value
+  if (target === null) return
+  const request = ++metricRequest
+  metricsLoading.value = true
+  metricsError.value = ''
+  try {
+    const response = await getProjectMetrics(target)
+    if (request === metricRequest && projectId.value === target) metricDefinitions.value = response
+  } catch (error: unknown) {
+    if (request === metricRequest) metricsError.value = getApiErrorMessage(error, '项目指标加载失败，请刷新项目。')
+  } finally { if (request === metricRequest) metricsLoading.value = false }
 }
 
 async function loadBatches(): Promise<void> {
@@ -145,7 +169,7 @@ async function loadResult(): Promise<void> {
 function selectProject(): void {
   contextRequest += 1
   clearBatches()
-  void loadBatches()
+  void Promise.all([loadBatches(), loadMetricDefinitions()])
 }
 
 function selectBatch(): void {
@@ -180,7 +204,7 @@ async function initializeContext(): Promise<void> {
     const requestedBatch = queryId(route.query.batchId)
     if (requestedProject === null || requestedBatch === null || !response.some(project => project.id === requestedProject)) return
     projectId.value = requestedProject
-    await loadBatches()
+    await Promise.all([loadBatches(), loadMetricDefinitions()])
     if (request !== contextRequest) return
     if (!batches.value.some(batch => batch.id === requestedBatch && batch.project_id === requestedProject)) {
       projectId.value = null
@@ -287,28 +311,76 @@ async function removeExperiment(experiment: Experiment): Promise<void> {
   } finally { experimentDeleting.value = false }
 }
 
-const metrics: { key: ResultMetric; label: string }[] = [
-  { key: 'accuracy', label: 'Accuracy' }, { key: 'precision', label: 'Precision' },
-  { key: 'recall', label: 'Recall' }, { key: 'f1', label: 'F1' }, { key: 'loss', label: 'Loss' },
-]
+const metrics = computed(() => metricDefinitions.value.map(definition => ({ ...definition,
+  label: definition.builtin ? definition.name : metricLabel(definition) })))
 const resultDialogVisible = ref(false)
 const resultEditing = ref(false)
 const resultExperimentId = ref<number | null>(null)
 const resultFormRef = ref<FormInstance>()
 const resultForm = reactive<Record<ResultMetric, string>>({ accuracy: '', precision: '', recall: '', f1: '', loss: '' })
 const resultFormError = ref('')
+const resultJson = ref('')
+const resultJsonError = ref('')
+const resultJsonPlaceholder = '{\n  "accuracy": 0.86,\n  "precision": 0.84,\n  "recall": 0.83,\n  "f1": 0.835,\n  "loss": 0.28\n}'
 
 function parseMetric(key: ResultMetric, text: string): number | null {
   if (text.trim() === '') return null
   const number = Number(text)
   if (!Number.isFinite(number)) throw new Error('请输入有限的数值')
-  if (number < 0 || (key !== 'loss' && number > 1)) {
-    throw new Error(key === 'loss' ? 'Loss 必须大于或等于 0' : '指标必须处于 [0, 1]')
+  const definition = metrics.value.find(metric => metric.key === key)
+  if (!definition) throw new Error('项目指标已变化，请重新打开结果表单')
+  if ((definition.lower_bound !== null && number < definition.lower_bound)
+      || (definition.upper_bound !== null && number > definition.upper_bound)) {
+    throw new Error(`指标必须处于 [${definition.lower_bound ?? '不限'}, ${definition.upper_bound ?? '不限'}]`)
   }
   return number
 }
 
-const resultRules: FormRules<typeof resultForm> = Object.fromEntries(metrics.map(metric => [metric.key, [{
+function fillResultFromJson(showMessage = true): void {
+  if (resultSubmitting.value) return
+  resultJsonError.value = ''
+  try {
+    let parsed: unknown
+    try { parsed = JSON.parse(resultJson.value) } catch { throw new Error('请输入合法的结果 JSON，键名需使用双引号。') }
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+      throw new Error('结果 JSON 必须是对象。')
+    }
+    const values = parsed as Record<string, unknown>
+    const unknownKeys = Object.keys(values).filter(key => !metrics.value.some(metric => metric.key === key))
+    if (unknownKeys.length > 0) {
+      throw new Error(`项目未定义指标：${unknownKeys.join('、')}。请先在项目管理中添加，或修正键名。`)
+    }
+    const fields = {} as Record<ResultMetric, string>
+    for (const metric of metrics.value) {
+      const value = values[metric.key]
+      if (value === null || value === undefined) {
+        fields[metric.key] = ''
+        continue
+      }
+      if (typeof value !== 'number') throw new Error(`${metric.label} 必须是数值或 null，不接受字符串或布尔值。`)
+      try { parseMetric(metric.key, String(value)) } catch (error: unknown) {
+        throw new Error(`${metric.label}：${error instanceof Error ? error.message : '指标校验失败'}`)
+      }
+      fields[metric.key] = String(value)
+    }
+    if (Object.values(fields).every(value => value === '')) {
+      throw new Error('实验结果至少需要一个有效指标，0 也是合法值。')
+    }
+    Object.assign(resultForm, fields)
+    resultFormError.value = ''
+    resultFormRef.value?.clearValidate()
+    if (showMessage) ElMessage.success('指标已填入，请核对后点击“保存结果”。')
+  } catch (error: unknown) {
+    resultJsonError.value = error instanceof Error ? error.message : '结果 JSON 校验失败。'
+  }
+}
+
+watch(resultJson, text => {
+  resultJsonError.value = ''
+  if (resultDialogVisible.value && text.trim()) fillResultFromJson(false)
+}, { flush: 'sync' })
+
+const resultRules = computed<FormRules<typeof resultForm>>(() => Object.fromEntries(metrics.value.map(metric => [metric.key, [{
   trigger: 'blur', validator: (_rule: unknown, value: unknown, callback: (error?: Error) => void) => {
     try {
       if (typeof value !== 'string') throw new Error('请输入有限的数值')
@@ -316,17 +388,26 @@ const resultRules: FormRules<typeof resultForm> = Object.fromEntries(metrics.map
       callback()
     } catch (error: unknown) { callback(error instanceof Error ? error : new Error('指标校验失败')) }
   },
-}]]))
+}]])))
+
+function resultMetricValue(metric: MetricDefinition): number | null {
+  return metric.builtin ? result.value?.[metric.key as BuiltinMetric] ?? null : result.value?.custom_metrics?.[metric.key] ?? null
+}
 
 async function openResultDialog(): Promise<void> {
   if (busy.value || resultLoading.value || !selectedExperiment.value || (!result.value && !resultMissing.value)) return
   resultExperimentId.value = selectedExperiment.value.id
   resultEditing.value = result.value !== null
-  for (const metric of metrics) {
-    const value = result.value?.[metric.key]
+  await loadMetricDefinitions()
+  if (metricsError.value || resultExperimentId.value !== selectedExperiment.value?.id) return
+  for (const key of Object.keys(resultForm)) delete resultForm[key]
+  for (const metric of metrics.value) {
+    const value = resultMetricValue(metric)
     resultForm[metric.key] = value === null || value === undefined ? '' : String(value)
   }
   resultFormError.value = ''
+  resultJson.value = ''
+  resultJsonError.value = ''
   resultDialogVisible.value = true
   await nextTick()
   resultFormRef.value?.clearValidate()
@@ -334,16 +415,22 @@ async function openResultDialog(): Promise<void> {
 
 async function submitResult(): Promise<void> {
   if (busy.value || !resultFormRef.value || resultExperimentId.value === null) return
+  if (resultJsonError.value) return
   resultSubmitting.value = true
   const target = resultExperimentId.value
   const editing = resultEditing.value
   resultFormError.value = ''
   try {
     if (!await resultFormRef.value.validate().catch(() => false)) return
-    const payload: ResultPayload = Object.fromEntries(metrics.map(metric => [metric.key, parseMetric(metric.key, resultForm[metric.key])]))
-    if (Object.values(payload).every(value => value === null)) {
+    const values = Object.fromEntries(metrics.value.map(metric => [metric.key, parseMetric(metric.key, resultForm[metric.key] ?? '')]))
+    if (Object.values(values).every(value => value === null)) {
       resultFormError.value = '实验结果至少需要一个有效指标，0 也是合法值。'
       return
+    }
+    const payload: ResultPayload = {
+      accuracy: values.accuracy ?? null, precision: values.precision ?? null,
+      recall: values.recall ?? null, f1: values.f1 ?? null, loss: values.loss ?? null,
+      custom_metrics: Object.fromEntries(metrics.value.filter(metric => !metric.builtin).map(metric => [metric.key, values[metric.key] ?? null])),
     }
     if (editing) await updateExperimentResult(target, payload)
     else await createExperimentResult(target, payload)
@@ -362,7 +449,7 @@ async function submitResult(): Promise<void> {
 }
 
 watch(() => [route.query.projectId, route.query.batchId], () => { void initializeContext() }, { immediate: true })
-onBeforeUnmount(() => { contextRequest += 1; batchRequest += 1; experimentRequest += 1; resultRequest += 1 })
+onBeforeUnmount(() => { contextRequest += 1; batchRequest += 1; experimentRequest += 1; resultRequest += 1; metricRequest += 1 })
 </script>
 
 <template>
@@ -393,6 +480,7 @@ onBeforeUnmount(() => { contextRequest += 1; batchRequest += 1; experimentReques
       </div>
     </div>
     <el-alert v-if="batchesError" :title="batchesError" type="error" :closable="false" show-icon />
+    <el-alert v-if="metricsError" :title="metricsError" type="error" :closable="false" show-icon />
     <el-empty v-if="!projectsLoading && !projectsError && projects.length === 0" description="暂无实验项目，请先前往项目管理创建项目。">
       <el-button @click="router.push('/projects')">前往项目管理</el-button>
     </el-empty>
@@ -445,14 +533,14 @@ onBeforeUnmount(() => { contextRequest += 1; batchRequest += 1; experimentReques
     <div v-else v-loading="resultLoading" class="result-content">
       <el-alert v-if="resultError" :title="resultError" type="error" :closable="false" show-icon />
       <el-empty v-else-if="resultMissing" description="该实验尚未录入结果">
-        <el-button type="primary" :disabled="busy || resultLoading" @click="openResultDialog">录入结果</el-button>
+        <el-button type="primary" :disabled="busy || resultLoading || metricsLoading" @click="openResultDialog">录入结果</el-button>
       </el-empty>
       <template v-else-if="result">
         <el-descriptions :column="2" border>
-          <el-descriptions-item v-for="metric in metrics" :key="metric.key" :label="metric.label">{{ result[metric.key] === null ? '-' : result[metric.key] }}</el-descriptions-item>
+          <el-descriptions-item v-for="metric in metrics" :key="metric.key" :label="metric.label">{{ resultMetricValue(metric) ?? '-' }}</el-descriptions-item>
           <el-descriptions-item label="更新时间">{{ formatDateTime(result.updated_at) }}</el-descriptions-item>
         </el-descriptions>
-        <el-button class="edit-result" type="primary" :disabled="busy || resultLoading" @click="openResultDialog">编辑结果</el-button>
+        <el-button class="edit-result" type="primary" :disabled="busy || resultLoading || metricsLoading" @click="openResultDialog">编辑结果</el-button>
       </template>
     </div>
   </el-card>
@@ -471,12 +559,21 @@ onBeforeUnmount(() => { contextRequest += 1; batchRequest += 1; experimentReques
     </template>
   </el-dialog>
 
-  <el-dialog v-model="resultDialogVisible" :title="resultEditing ? '编辑实验结果' : '录入实验结果'" width="min(520px, 92vw)"
+  <el-dialog v-model="resultDialogVisible" :title="resultEditing ? '编辑实验结果' : '录入实验结果'" width="min(520px, 92vw)" top="5vh"
              :close-on-click-modal="!resultSubmitting" :close-on-press-escape="!resultSubmitting" :show-close="!resultSubmitting">
-    <p class="hint">每项可以留空；至少填写一项。Accuracy、Precision、Recall、F1 范围为 [0, 1]，Loss ≥ 0。</p>
+    <p class="hint">每项可留空，至少填写一项。系统指标保留原范围；自定义指标遵循项目配置的单位和上下限。</p>
+    <section class="result-json-entry" aria-label="JSON 快速录入">
+      <label for="result-json-input">JSON 快速录入（可选）</label>
+      <p class="hint">粘贴合法 JSON 后自动填入下方指标，可继续手动修改，再点击保存。未提供或为 null 的指标会清空对应输入。</p>
+      <el-input id="result-json-input" v-model="resultJson" type="textarea" :rows="5" aria-label="结果 JSON"
+                :placeholder="resultJsonPlaceholder" :disabled="resultSubmitting" />
+      <el-alert v-if="resultJsonError" :title="resultJsonError" type="error" :closable="false" show-icon />
+      <el-button :disabled="resultSubmitting || !resultJson.trim()" @click="fillResultFromJson()">重新填入指标</el-button>
+    </section>
     <el-alert v-if="resultFormError" :title="resultFormError" type="error" :closable="false" show-icon />
-    <el-form ref="resultFormRef" :model="resultForm" :rules="resultRules" label-position="top" :disabled="resultSubmitting" @submit.prevent="submitResult">
+    <el-form ref="resultFormRef" class="result-metric-form" :model="resultForm" :rules="resultRules" label-position="top" :disabled="resultSubmitting" @submit.prevent="submitResult">
       <el-form-item v-for="metric in metrics" :key="metric.key" :label="metric.label" :prop="metric.key">
+        <p class="metric-hint">{{ metric.key }} · {{ metric.direction === 'max' ? '越大越好' : '越小越好' }} · {{ metric.lower_bound ?? '不限' }} ～ {{ metric.upper_bound ?? '不限' }}</p>
         <el-input v-model="resultForm[metric.key]" inputmode="decimal" :aria-label="metric.label" placeholder="留空表示无此指标" />
       </el-form-item>
     </el-form>
@@ -491,4 +588,13 @@ onBeforeUnmount(() => { contextRequest += 1; batchRequest += 1; experimentReques
 .hint { color: #6b7280; line-height: 1.7; }
 .result-content { min-height: 120px; }
 .edit-result { margin-top: 20px; }
+.result-json-entry { margin-bottom: 20px; padding-bottom: 20px; border-bottom: 1px solid #e5e7eb; }
+.result-json-entry > label { font-weight: 600; }
+.result-json-entry .el-alert { margin-top: 12px; }
+.result-json-entry .el-button { margin-top: 12px; }
+.result-metric-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 16px; }
+.metric-hint { margin: 0 0 4px; color: #6b7280; font-size: 12px; width: 100%; }
+@media (max-width: 480px) {
+  .result-metric-form { grid-template-columns: minmax(0, 1fr); }
+}
 </style>

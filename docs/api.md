@@ -1,6 +1,6 @@
 # 当前 API
 
-当前阶段：4A，多实验比较 API。本文仅记录已实现接口；统计及前端功能尚未实现。
+本文保留阶段 4A 的核心 API 基线和无自定义指标的响应示例。2026-10-13 新增项目共享指标与 custom_metrics 扩展，详见 [当前共享指标 API 与规则](project-metrics-proposal.md#数据与-api)；最新完整结构以 /openapi.json 为准，现有前端已实现。
 
 本地地址：`http://127.0.0.1:8000`。Swagger：`/docs`，OpenAPI：`/openapi.json`。Swagger 标签为 Health、Projects、Experiment Batches、Experiments、Experiment Results、Experiment Comparison。
 
@@ -93,23 +93,23 @@ Experiment 允许删除，不因已有 Result 而阻止；数据库 CASCADE 规�
 | --- | --- | --- | --- | --- |
 | POST | `/experiments/{experiment_id}/result` | 首次录入实验结果 | 201 | 404：实验不存在；409：结果已存在或写入冲突；422：输入非法 |
 | GET | `/experiments/{experiment_id}/result` | 查询当前实验结果 | 200 | 404：实验或结果不存在；422：路径参数非法 |
-| PUT | `/experiments/{experiment_id}/result` | 完整替换已有结果的五项指标 | 200 | 404：实验或结果不存在；409：写入冲突；422：输入非法 |
+| PUT | `/experiments/{experiment_id}/result` | 完整替换已有结果的系统与自定义指标 | 200 | 404：实验或结果不存在；409：写入冲突；422：输入非法 |
 
 结果始终通过 Experiment 访问；没有 Result DELETE、全局结果列表或按 result_id 查询的接口。Experiment 可以合法地暂时没有 Result。
 
 ### 输入与数值校验
 
-Create / Update 均只允许 accuracy、precision、recall、f1、loss 五项指标；每项可省略或为 null，但至少一项非 null。
+Create / Update 支持五项系统指标和可选 custom_metrics 对象；各项可省略或为 null，系统与自定义项合计至少一项非 null。自定义键需已在所属项目配置，有限数值及上下限按项目定义校验。
 
 - accuracy、precision、recall、f1：有限数值，范围 [0, 1]，包含两端。
 - loss：大于等于 0 的有限数值，没有已确定的有限上界，2.5 等大于 1 的值合法。
 - JSON integer 和 float 均允许；0 是有效指标，`{"loss":0}` 合法。
 - before 字段校验明确拒绝 bool、string、数组和对象；字符串数字不自动转换。
 - `allow_inf_nan=False` 拒绝 NaN、Infinity、-Infinity。非标准 JSON 数值被解析后仍须通过有限数值校验；422 错误回显中的非有限值转为文本，保证响应可序列化，不写入数据库。
-- `{}` 和五项全部 null 均返回 422；一项合法不能抵消其他字段的非法值。
+- `{}` 或系统与自定义项全部为空均返回 422；一项合法不能抵消其他字段的非法值。只填写合法自定义值也可以保存结果。
 - 输入使用 `extra="forbid"`：id、experiment_id、updated_at、experiment、result 及任何额外字段均返回 422。
 
-ExperimentResultRead 返回 id、experiment_id、五项指标和 updated_at，缺失单项指标保持 null，不嵌套 Experiment。
+ExperimentResultRead 返回 id、experiment_id、五项指标和 updated_at，有自定义数值时另含 custom_metrics；缺失单项指标保持 null，不嵌套 Experiment。
 
 ### 首次录入与完整更新
 
@@ -149,7 +149,7 @@ PUT 只更新已存在的结果，不执行 upsert，id 和 experiment_id 保持
 
 ### 响应结构
 
-响应 Schema 为 ExperimentCompareResponse，顶层仅包含 experiments、best_by_metric。下面示例假设实验 3 有部分指标，实验 1 尚未录入结果：
+响应 Schema 为 ExperimentCompareResponse，没有项目自定义定义时顶层包含 experiments、best_by_metric；有定义时另含 custom_metrics 列表，按项目分别提供定义、values 和 best。下面示例假设实验 3 有部分指标，实验 1 尚未录入结果：
 
 ```json
 {
@@ -191,7 +191,7 @@ PUT 只更新已存在的结果，不执行 upsert，id 和 experiment_id 保持
 
 - experiments 严格保持请求 ID 顺序，例如 [3, 1, 2] 对应返回 3、1、2。
 - ComparisonExperiment 仅返回 id、experiment_no、model_name、batch_id、project_id、result。project_id 通过 Experiment → Batch → Project 获得，不增加数据库列。
-- Result 存在时仅返回五项指标，单项缺失保持 null，不返回结果 id 或 updated_at。没有 Result 时保留该实验且 result=null，不创建结果、不补 0。
+- Result 存在时返回五项系统指标，有自定义数值时另含 custom_metrics；单项缺失保持 null，不返回结果 id 或 updated_at。没有 Result 时保留该实验且 result=null，不创建结果、不补 0。
 - ComparisonBestByMetric 明确固定五个必需指标键；每项 BestMetric 包含 direction、value、experiment_ids。使用 Pydantic response_model，Swagger 展示完整结构。
 
 ### 最佳值与数据一致性

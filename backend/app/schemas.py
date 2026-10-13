@@ -16,6 +16,51 @@ from pydantic import (
 Name = Annotated[
     str, StringConstraints(strict=True, strip_whitespace=True, min_length=1)
 ]
+FiniteMetric = Annotated[float, Field(strict=True, allow_inf_nan=False)]
+MetricKey = Annotated[str, StringConstraints(strict=True, pattern=r"^[a-z][a-z0-9_]{0,63}$")]
+
+
+class ProjectMetricInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    key: MetricKey
+    name: Name
+    unit: Annotated[str, StringConstraints(strict=True, strip_whitespace=True)] = ""
+    direction: Literal["max", "min"]
+    lower_bound: FiniteMetric | None = None
+    upper_bound: FiniteMetric | None = None
+
+    @field_validator("key", mode="before")
+    @classmethod
+    def normalize_key(cls, value: Any) -> Any:
+        return value.strip().lower() if isinstance(value, str) else value
+
+    @field_validator("key")
+    @classmethod
+    def reserve_keys(cls, value: str) -> str:
+        if value in {"accuracy", "precision", "recall", "f1", "loss", "custom_metrics", "id", "experiment_id", "updated_at", "constructor", "prototype"}:
+            raise ValueError("指标键与系统字段冲突，请换一个键名")
+        return value
+
+    @model_validator(mode="after")
+    def ordered_bounds(self) -> Self:
+        if self.lower_bound is not None and self.upper_bound is not None and self.lower_bound > self.upper_bound:
+            raise ValueError("指标下限不能大于上限")
+        return self
+
+
+class ProjectMetricRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int | None = None
+    project_id: int
+    key: str
+    name: str
+    unit: str
+    direction: Literal["max", "min"]
+    lower_bound: float | None
+    upper_bound: float | None
+    builtin: bool = False
 
 
 class _NamedResourceInput(BaseModel):
@@ -110,6 +155,7 @@ class _ExperimentResultInput(BaseModel):
     recall: float | None = Field(default=None, ge=0, le=1)
     f1: float | None = Field(default=None, ge=0, le=1)
     loss: float | None = Field(default=None, ge=0)
+    custom_metrics: dict[MetricKey, FiniteMetric | None] = Field(default_factory=dict, strict=True)
 
     @field_validator("accuracy", "precision", "recall", "f1", "loss", mode="before")
     @classmethod
@@ -124,7 +170,7 @@ class _ExperimentResultInput(BaseModel):
     def require_at_least_one_metric(self) -> Self:
         if all(
             value is None
-            for value in (self.accuracy, self.precision, self.recall, self.f1, self.loss)
+            for value in (self.accuracy, self.precision, self.recall, self.f1, self.loss, *self.custom_metrics.values())
         ):
             raise ValueError("at least one metric must be non-null")
         return self
@@ -149,6 +195,7 @@ class ExperimentResultRead(BaseModel):
     f1: float | None
     loss: float | None
     updated_at: datetime
+    custom_metrics: dict[str, float] = Field(default_factory=dict, exclude_if=lambda value: not value)
 
 
 class ExperimentCompareRequest(BaseModel):
@@ -174,6 +221,7 @@ class ComparisonResultMetrics(BaseModel):
     recall: float | None
     f1: float | None
     loss: float | None
+    custom_metrics: dict[str, float] = Field(default_factory=dict, exclude_if=lambda value: not value)
 
 
 class ComparisonExperiment(BaseModel):
@@ -199,6 +247,14 @@ class ComparisonBestByMetric(BaseModel):
     loss: BestMetric
 
 
+class CustomMetricComparison(BaseModel):
+    definition: ProjectMetricRead
+    project_name: str
+    values: dict[int, float | None]
+    best: BestMetric
+
+
 class ExperimentCompareResponse(BaseModel):
     experiments: list[ComparisonExperiment]
     best_by_metric: ComparisonBestByMetric
+    custom_metrics: list[CustomMetricComparison] = Field(default_factory=list, exclude_if=lambda value: not value)

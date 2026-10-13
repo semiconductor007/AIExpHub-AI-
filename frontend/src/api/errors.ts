@@ -44,6 +44,7 @@ export function getApiErrorMessage(error: unknown, fallback = '操作失败，�
   }
   if (Array.isArray(detail)) {
     const messages = detail.filter(isRecord).map((item) => {
+      if (Array.isArray(item.loc) && item.loc.includes('custom_metrics')) return '自定义指标必须是有限数值或 null，且使用项目已定义的指标键。'
       if (Array.isArray(item.loc) && item.loc.includes('experiment_ids')) return '请选择至少两个不同的有效实验进行比较。'
       const field = Array.isArray(item.loc) ? item.loc.at(-1) : undefined
       const label = typeof field === 'string' ? fieldLabels[field] ?? '输入' : '输入'
@@ -54,8 +55,12 @@ export function getApiErrorMessage(error: unknown, fallback = '操作失败，�
         return field === 'loss' ? 'Loss 必须是大于等于 0 的有限数值。' : `${label}必须是 [0, 1] 内的有限数值。`
       }
       if (item.type === 'extra_forbidden') return '请求包含不允许修改的字段。'
+      if (['key', 'direction', 'lower_bound', 'upper_bound', 'unit'].includes(String(field))) {
+        if (item.type === 'value_error' && typeof item.msg === 'string') return item.msg.replace(/^Value error, /, '')
+        return '请检查指标键、单位、方向和有限数值上下限。'
+      }
       if (item.type === 'value_error' && ['name', 'experiment_no', 'model_name'].includes(String(field))) return `${label}不能为空或仅含空白字符。`
-      if (item.type === 'value_error') return '输入校验失败，请检查必填字段及至少一项有效结果指标。'
+      if (item.type === 'value_error') return typeof item.msg === 'string' && item.msg.includes('指标') ? item.msg.replace(/^Value error, /, '') : '输入校验失败，请检查必填字段及至少一项有效结果指标。'
       return `${label}校验失败，请检查输入。`
     })
     return messages.length ? messages.join('；') : '输入校验失败，请检查表单。'

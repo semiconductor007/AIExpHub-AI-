@@ -7,6 +7,7 @@ from sqlalchemy.orm import sessionmaker
 
 from app import database, main
 from app.database import Base, enable_sqlite_foreign_keys, get_db
+from app.metric_constraints import install_metric_constraints
 
 
 @pytest.fixture(autouse=True)
@@ -29,6 +30,7 @@ def test_engine(tmp_path, forbid_production_database):
     event.listen(engine, "connect", enable_sqlite_foreign_keys)
     try:
         Base.metadata.create_all(bind=engine)
+        install_metric_constraints(engine)
         yield engine
     finally:
         engine.dispose()

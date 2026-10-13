@@ -1,4 +1,4 @@
-"""Core database models; application-level input validation comes later."""
+"""Core experiment models and project-scoped shared metric definitions."""
 
 from __future__ import annotations
 
@@ -14,6 +14,7 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    UniqueConstraint,
     func,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -40,6 +41,28 @@ class Project(Base):
     batches: Mapped[list[ExperimentBatch]] = relationship(
         back_populates="project", passive_deletes="all"
     )
+    metrics: Mapped[list[ProjectMetric]] = relationship(
+        back_populates="project", passive_deletes="all", order_by="ProjectMetric.id"
+    )
+
+
+class ProjectMetric(Base):
+    __tablename__ = "project_metrics"
+    __table_args__ = (
+        UniqueConstraint("project_id", "key", name="uq_project_metric_key"),
+        CheckConstraint("direction IN ('max', 'min')", name="ck_metric_direction"),
+        CheckConstraint("lower_bound IS NULL OR upper_bound IS NULL OR lower_bound <= upper_bound", name="ck_metric_bounds"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), nullable=False)
+    key: Mapped[str] = mapped_column(String, nullable=False)
+    name: Mapped[str] = mapped_column(String, nullable=False)
+    unit: Mapped[str] = mapped_column(String, nullable=False, default="")
+    direction: Mapped[str] = mapped_column(String, nullable=False)
+    lower_bound: Mapped[float | None] = mapped_column(Float, nullable=True)
+    upper_bound: Mapped[float | None] = mapped_column(Float, nullable=True)
+    project: Mapped[Project] = relationship(back_populates="metrics")
 
 
 class ExperimentBatch(Base):
@@ -110,9 +133,10 @@ class ExperimentResult(Base):
         ),
         CheckConstraint(
             "accuracy IS NOT NULL OR precision IS NOT NULL OR recall IS NOT NULL "
-            "OR f1 IS NOT NULL OR loss IS NOT NULL",
+            "OR f1 IS NOT NULL OR loss IS NOT NULL OR json(custom_metrics) <> '{}'",
             name="ck_experiment_results_at_least_one_metric",
         ),
+        CheckConstraint("json_valid(custom_metrics) AND json_type(custom_metrics) = 'object'", name="ck_result_custom_metrics_object"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -124,6 +148,9 @@ class ExperimentResult(Base):
     recall: Mapped[float | None] = mapped_column(Float, nullable=True)
     f1: Mapped[float | None] = mapped_column(Float, nullable=True)
     loss: Mapped[float | None] = mapped_column(Float, nullable=True)
+    custom_metrics: Mapped[dict[str, float]] = mapped_column(
+        JSON(none_as_null=True), nullable=False, default=dict, server_default="{}"
+    )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime,
         nullable=False,

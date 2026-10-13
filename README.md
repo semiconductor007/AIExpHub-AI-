@@ -14,19 +14,23 @@
 | UI | Element Plus（当前全量注册） |
 | 图表 | ECharts 6.1.0（按模块引入，Canvas 渲染） |
 | 后端 | Python 3.12 + FastAPI + Uvicorn + Pydantic v2 |
-| ORM | SQLAlchemy 2.x（已建立四个业务模型与数据库约束） |
+| ORM | SQLAlchemy 2.x（项目、批次、实验、结果及项目指标定义） |
 | 数据库 | SQLite |
 | 测试 | pytest + httpx / FastAPI TestClient（已建立后端验收测试） |
 
 ## 当前开发阶段
 
-阶段 1 至阶段 5B 已完成，当前阶段 6A：课程评分标准审计与交付文档已完成。阶段 6B：最终真实验收与演示交付尚未开始；演示视频未录制，阶段 5A AA 仍待实际浏览器窗口拖动。文档准备和既有验证不代表课程最终验收通过。
+阶段 1 至阶段 6A 已完成，阶段 6B 的核心页面闭环已有验证，实际窗口拖动、学生讲解和视频交付仍待人工完成。2026-10-13 完成另行授权的 JSON 自动填入与项目共享指标增量，最新 pytest 为 139 passed、1 warning，TypeScript / build 通过；临时验证数据已清理，用户原有数据保留。此次功能交付不代表课程最终验收通过。
 
 ## 当前功能
 
-后端提供 `/health` 健康检查、Project、ExperimentBatch 和 Experiment CRUD API，以及 ExperimentResult 首次录入、查询和完整更新 API、多实验比较 API、对应的 Pydantic Schema 与请求级数据库 Session。四个 ORM 模型和业务表已建立，核心 API、数据库约束及比较规则已通过 pytest 自动验收。前端已实现首页功能入口与健康状态、Project / Batch 管理、Experiment / Result 管理、Experiment Compare 表格和 ECharts 指标比较可视化，以及明确的 404 页面。
+后端提供 `/health` 健康检查、Project、ExperimentBatch 和 Experiment CRUD API，以及 ExperimentResult 首次录入、查询和完整更新 API、多实验比较 API、对应的 Pydantic Schema 与请求级数据库 Session。核心四个 ORM 模型及项目指标定义已建立，核心 API、数据库约束及比较规则已通过 pytest 自动验收。前端已实现首页功能入口与健康状态、Project / Batch 管理、Experiment / Result 管理、Experiment Compare 表格和 ECharts 指标比较可视化，以及明确的 404 页面。
+
+2026-10-13 完成经用户授权的项目级共享指标增量：在项目管理中选中项目后新增指标键、名称、单位、最佳方向和可选上下限，所有批次与实验共用定义，分别记录数值。结果 JSON 自动识别项目指标，比较表格和独立图表按项目、单位、方向展示最佳及并列结果。已有数值引用的定义仅允许改显示名称；原五项指标、跨项目比较和已有数据保留。最新 pytest 为 139 passed、1 warning（16.60s），TypeScript / build 通过。使用、API、升级与真实验证见 [项目共享指标](docs/project-metrics-proposal.md)，课程人工验收仍待完成。
 
 使用顺序：在项目管理创建项目与批次，进入实验管理录入模型、JSON 参数及结果，再到实验比较跨项目加入至少两个实验，查看表格和双图；修改结果后点击重新比较读取最新值。示例数据与 7 分 30 秒演示草案见 [演示脚本](docs/demo-script.md)。
+
+2026-10-12 经用户另行确认，增加结果 JSON 快速录入：在“录入结果”或“编辑结果”弹窗粘贴指标对象后自动填入表单，核对或修改下方数值后点击“保存结果”；“重新填入指标”仅用于再次应用 JSON。未提供或为 null 的指标会清空对应输入，非法 JSON 不覆盖已填内容并阻止保存，可修改 JSON 或清空后手动录入。示例与本次验证见 [JSON 快速录入说明](docs/result-json-entry.md)。此增量改进不表示阶段 6B 人工验收已完成。
 
 开发由本聊天中的 Codex 按小阶段协助需求分析、领域 / API / 前端代码、测试和调试，使用者确定规则与推进范围，实际测试与 Git 提交控制改动。真实 Prompt 摘要、提交及五个验证案例见 [AI 辅助开发说明](docs/ai-assisted-development.md)，没有在业务产品中接入大模型。原课程明确生成式 AI 扩展为可选，不影响核心验收。
 
@@ -41,7 +45,7 @@
 | [演示脚本草案](docs/demo-script.md) | 5–8 分钟顺序、稳定示例数据与清理要求；视频待 6B |
 | [需求边界](docs/requirements.md) / [领域模型](docs/domain-model.md) / [校验规则](docs/validation-rules.md) | 保留阶段 2.5 冻结设计和当时范围文字，历史“未实现”不表示当前功能状态 |
 | [后端 API](docs/api.md) | 截至 4A 已确定的路径、请求响应及状态码；前端现状见本文与整体设计 |
-| [开发计划](docs/development-plan.md) | 6A 与 6B 分开，完成 6A 后停止 |
+| [开发计划](docs/development-plan.md) | 6B 当前进度、验收与人工交付边界 |
 
 ## 核心业务规则
 
@@ -51,7 +55,7 @@
 
 Experiment 编号在 Schema 中 trim + uppercase，应用层检查全局唯一，数据库 UNIQUE 提供第二层保护；模型名称 trim 后非空，parameters 必须为非空 JSON object、参数键不固定。Experiment PUT 完整更新编号、模型、参数和备注，省略 notes 或传 null 会清空，不允许移动所属 Batch。实验可以没有 Result，响应暂不包含结果；当前只提供批次内实验列表。
 
-Result 通过 `/experiments/{experiment_id}/result` 访问：POST 仅首次创建，重复录入返回 409；GET / PUT 区分实验不存在与结果未录入，均返回对应 404，PUT 不执行 upsert。五项指标至少一项非 null，允许整数和浮点数，拒绝 bool、string、NaN / Infinity；前四项范围 [0, 1]，loss >= 0。PUT 完整替换指标，省略项清空，真实修改后 updated_at 刷新。没有 Result DELETE 或全局结果列表。
+Result 通过 `/experiments/{experiment_id}/result` 访问：POST 仅首次创建，重复录入返回 409；GET / PUT 区分实验不存在与结果未录入，均返回对应 404，PUT 不执行 upsert。系统与自定义指标合计至少一项非 null，允许整数和浮点数，拒绝 bool、string、NaN / Infinity；前四项范围 [0, 1]，loss >= 0。PUT 完整替换指标，省略项清空，真实修改后 updated_at 刷新。没有 Result DELETE 或全局结果列表。
 
 `POST /experiments/compare` 接收至少两个不同的严格正整数 ID，允许跨项目、批次和模型，按输入顺序返回实验。缺失结果或指标保持 null；accuracy / precision / recall / f1 取最大，loss 取最小，并列最优全部返回，全空指标没有最佳实验。每次只读查询最新 Result，不保存或缓存比较结果；请求非法返回 422，实验不存在返回包含缺失 ID 的 404。详细结构见 [当前 API](docs/api.md)。
 
@@ -102,13 +106,13 @@ Vue Router 当前提供 `/` 首页、`/projects` 项目管理、`/experiments` �
 
 Router afterEach 使用 meta.title 设置 document.title：首页为 AIExpHub，业务页为“页面名称 | AIExpHub”。末尾 catch-all 路由显示“404 / 页面不存在 / 当前地址无对应页面。”及“返回首页”按钮，标题为“页面不存在 | AIExpHub”，不自动跳转。通用标题、Card、操作按钮和选择区样式集中在 style.css；首页内容限宽 1040px，业务页保留原有 1200px 布局与表格滚动。
 
-项目管理采用上下两张卡片：项目列表支持新建、编辑、删除和查看批次；批次列表只加载当前选中项目的数据，未选择时不请求批次 API。两类名称提交前 trim 并校验非空，允许同名；创建和完整更新只提交 name / description，空说明传 null。保存后刷新列表，当前选中项目的名称和说明同步更新；删除前确认，成功后刷新，删除选中项目时清空选择与批次。
+项目管理采用项目、批次和共享评价指标三张卡片：项目列表支持新建、编辑、删除和查看批次；批次和指标只加载当前选中项目的数据。项目与批次名称提交前 trim 并校验非空，允许同名；创建和完整更新只提交 name / description，空说明传 null。保存后刷新列表，当前选中项目的名称和说明同步更新；删除前确认，成功后刷新，删除选中项目时清空下级选择。
 
 API 文件复用统一 client，批次创建与列表使用 `/projects/{id}/batches`，编辑、删除使用 `/batches/{id}`，不移动所属项目。errors.ts 解析后端 detail 字符串、422 数组及网络错误；项目存在批次、批次存在实验的 409 显示中文提示，不自动删除子资源。加载、提交和删除有独立状态防止重复操作；切换项目时忽略旧批次请求。日期使用原生 Intl.DateTimeFormat，后端无偏移的 UTC 时间按 UTC 解析，失败时显示原始值，不增加日期依赖。
 
 实验管理使用项目→批次→实验的选择流程，切换父资源清空下级选择和结果；各层请求计数器阻止过期响应覆盖新选择。项目管理的批次行可通过“管理实验”携带 projectId / batchId 跳转；仅在 ID 合法、项目存在且批次归属匹配时自动选择，否则回退手动选择。列表只请求当前批次的实验，不逐条请求 Result；用户查看结果或创建后自动选中新实验时才加载对应结果。
 
-实验表单对编号 trim + uppercase、模型名称 trim 后检查非空；多行参数使用 JSON.parse 校验为非空对象，允许自由键和嵌套对象。PUT 完整提交四个可编辑字段，空备注传 null，不发送 batch_id。结果未录入的特定 404 显示空状态；首次录入 POST、已有结果 PUT，共用五指标表单。空输入传 null，有限数值须满足范围，至少一项非空且 0 合法；保存后重新 GET 最新结果和更新时间。null 显示 `-`，0 显示 `0`，不转换百分比或固定小数位。删除实验需确认已有结果也将删除，使用已有后端 CASCADE，不提供 Result DELETE。
+实验表单对编号 trim + uppercase、模型名称 trim 后检查非空；多行参数使用 JSON.parse 校验为非空对象，允许自由键和嵌套对象。PUT 完整提交四个可编辑字段，空备注传 null，不发送 batch_id。结果未录入的特定 404 显示空状态；首次录入 POST、已有结果 PUT，共用按项目定义生成的指标表单。空输入传 null，有限数值须满足范围，至少一项非空且 0 合法；保存后重新 GET 最新结果和更新时间。null 显示 `-`，0 显示 `0`，不转换百分比或固定小数位。删除实验需确认已有结果也将删除，使用已有后端 CASCADE，不提供 Result DELETE。
 
 实验比较分为候选实验、已选实验与比较结果三个区域。候选按项目→批次加载，已选项可跨项目 / 批次保留，以 ID 去重并按加入顺序排列；项目和批次名称作为加入时的本地展示元数据，不写入 localStorage。至少两项才可比较，每次只调用一次 `POST /experiments/compare`，结果表保持响应顺序，名称缺失或关联不符时回退为 Project #ID / Batch #ID，不额外查询名称或结果。无 Result 的实验保留且明确标识，缺失指标显示 `-`、0 显示 `0`；最佳标签、并列摘要和方向完全使用后端 best_by_metric，不在前端重算。添加、移除或清空选择会清空旧比较结果，请求期间禁用选择修改；重新比较重新读取当前 Result。失效实验的 404 和比较 422 显示中文，错误时保留选择供手动修正；此页面不修改实验或结果，不保存比较历史。
 
@@ -138,12 +142,12 @@ build 执行 `vue-tsc -b && vite build`，先类型检查，再生成 `frontend/
 
 测试通过 FastAPI TestClient 调用实际 HTTP 层，每个用例使用独立的 `tmp_path/test.db` SQLite 数据库并开启外键。Router 的 get_db 和健康检查的 Session 均指向测试数据库；TestClient 不进入生产 lifespan，测试守卫禁止生产 engine 连接或 init_db 执行。测试不会读取、清空或修改 `backend/data/aiexphub.db`。临时目录由 pytest 管理，结束后关闭会话、清空 dependency overrides 并 dispose 测试 engine。
 
-开发依赖固定 pytest 9.1.1、httpx 0.28.1，不改变生产运行依赖。当前有 102 个用例，包含原 60 个用例和新增的 42 个比较用例，覆盖核心 API、数据库第二层约束、比较输入和响应、null / 0、最优与并列、最新结果、单条查询和只读行为；测试文件可独立执行。原 Swagger 测试同步增加比较路径和标签。现有 Starlette 1.7.0 会提示 TestClient 使用 httpx 的第三方弃用 warning，调用仍正常，未为消除 warning 升级框架或加入其他测试依赖。
+开发依赖固定 pytest 9.1.1、httpx 0.28.1，不改变生产运行依赖。当前有 139 个用例，包含原 102 个核心 / 比较用例、34 个共享指标用例和 3 个迁移用例，覆盖严格校验、数据库约束、项目隔离、最新结果、单条只读比较、引用保护和迁移保留 / 回滚；测试文件可独立执行。原 Swagger 测试同步增加比较路径和标签。现有 Starlette 1.7.0 会提示 TestClient 使用 httpx 的第三方弃用 warning，调用仍正常，未为消除 warning 升级框架或加入其他测试依赖。
 
 ## 当前限制
 
 - 当前使用本地 SQLite，部署与多人使用方案尚未确定。
-- 启动使用 `create_all` 创建缺失表，没有 Alembic，不能自动迁移已有表结构。
+- 启动提供本次结果表升级与备份，随后使用 `create_all` 创建缺失表；没有 Alembic 或通用版本迁移系统。
 - 无登录认证、用户系统或权限管理。
 - 不保存比较历史，比较每次读取当前有效结果。
 - 无 AI 自动分析、Dashboard / Statistics 或统计聚合接口。
@@ -152,22 +156,23 @@ build 执行 `vue-tsc -b && vite build`，先类型检查，再生成 `frontend/
 
 ## 当前数据库层
 
-应用启动时调用 `init_db()`，先加载 `app.models` 注册模型，再执行 `Base.metadata.create_all(bind=engine)`，创建缺失的本地 SQLite 表：
+应用启动时调用 `init_db()`，注册模型并检测旧结果表；需要时先备份并事务升级，再执行 `create_all` 创建缺失表、安装指标约束触发器：
 
 - `projects`
 - `experiment_batches`
 - `experiments`
 - `experiment_results`
+- `project_metrics`
 
-当前开发阶段采用 `create_all` 初始化，重复启动不会重复创建已有表，但它不会迁移或修改已有表结构。后续需要正式迁移能力时再讨论 Alembic，本阶段未引入。
+本次指定升级保留旧结果的 ID、五项指标和时间，新增 custom_metrics 初始化为 {}；重复启动跳过已完成升级。备份位置和安全边界见 [共享指标说明](docs/project-metrics-proposal.md#sqlite-升级和备份)，不删除或清空原数据库。
 
 每个新数据库连接通过 engine 的 `connect` 事件执行 `PRAGMA foreign_keys=ON`。Project → Batch、Batch → Experiment 使用 RESTRICT；Experiment → Result 使用 CASCADE。ORM 双向关系使用 `back_populates`，父端设置 `passive_deletes="all"`，由数据库处理删除，避免 ORM 将子记录外键改为 NULL；实验结果关系为可选单条结果。
 
-实验编号全局 UNIQUE，结果的 `experiment_id` UNIQUE。结果表的六个命名 CHECK 保证四项 [0, 1] 指标、非负 loss 和至少一项指标非 NULL。创建时间使用系统 UTC 时间，结果的 `updated_at` 在 ORM 更新时刷新；原生 SQL 更新不会触发 ORM 的 onupdate。
+实验编号全局 UNIQUE，结果的 `experiment_id` UNIQUE。结果表 CHECK 保证四项 [0,1]、非负 loss、JSON 对象与有效非空结果；SQLite 触发器另验证自定义值的有限数值、项目归属和范围，保护已使用定义。创建时间使用系统 UTC 时间，结果的 `updated_at` 在 ORM 更新时刷新；原生 SQL 更新不会触发 ORM 的 onupdate。
 
-数据库提供第二层完整性保护，Project 与 Batch 名称、Experiment 编号与模型名称、非空 JSON object 和结果指标的输入校验已在 Schema 实现。422 错误回显中的非有限值转为文本，避免响应序列化失败；非法指标不会保存。没有添加 SQLite JSON 扩展 CHECK。参数列使用 `JSON(none_as_null=True)`，使 Python None 作为 SQL NULL 接受 NOT NULL 约束检查。
+数据库提供第二层完整性保护，Project 与 Batch 名称、Experiment 编号与模型名称、非空 JSON object 和结果指标的输入校验已在 Schema 实现。422 错误回显中的非有限值转为文本，避免响应序列化失败；非法指标不会保存。实验参数仍没有 JSON 扩展 CHECK。参数列使用 `JSON(none_as_null=True)`，使 Python None 作为 SQL NULL 接受 NOT NULL 约束检查。
 
-已实际验证外键开启、两级 RESTRICT、两项 UNIQUE、指标范围、全空结果拒绝、合法边界及结果 CASCADE。临时验证数据已回滚，当前四张业务表均为空，数据库文件不提交。
+已实际验证外键开启、两级 RESTRICT、两项 UNIQUE、指标范围、全空结果拒绝、合法边界及结果 CASCADE。本轮临时验证数据经正常 API 清理，用户已有数据保持不变；数据库与升级备份不提交。
 
 ## 验证状态
 
@@ -184,7 +189,9 @@ AIExpHub/
 │   │   ├── __init__.py
 │   │   ├── main.py          # 初始化、Router 注册与健康检查
 │   │   ├── database.py      # Base、连接、get_db 与 init_db
-│   │   ├── models.py        # 四个业务 ORM 模型与数据库约束
+│   │   ├── models.py        # 核心模型、共享指标与约束
+│   │   ├── migrations.py    # 旧结果表指定升级与备份
+│   │   ├── metric_constraints.py # 自定义指标 SQLite 触发器
 │   │   ├── schemas.py       # 业务实体与比较请求 / 响应 Schema
 │   │   └── routers/
 │   │       ├── __init__.py
@@ -192,7 +199,8 @@ AIExpHub/
 │   │       ├── batches.py
 │   │       ├── experiments.py
 │   │       ├── compare.py
-│   │       └── results.py
+│   │       ├── results.py
+│   │       └── metrics.py
 │   ├── data/
 │   │   └── .gitkeep         # aiexphub.db 为运行时文件，不提交
 │   ├── tests/
@@ -203,7 +211,9 @@ AIExpHub/
 │   │   ├── test_experiments.py
 │   │   ├── test_results.py
 │   │   ├── test_compare.py
-│   │   └── test_database_constraints.py
+│   │   ├── test_database_constraints.py
+│   │   ├── test_project_metrics.py
+│   │   └── test_metric_migration.py
 │   ├── pytest.ini
 │   ├── requirements-dev.txt
 │   └── requirements.txt
@@ -217,6 +227,7 @@ AIExpHub/
 │   │   │   ├── experiments.ts
 │   │   │   ├── results.ts
 │   │   │   ├── compare.ts
+│   │   │   ├── metrics.ts
 │   │   │   └── errors.ts
 │   │   ├── router/
 │   │   │   └── index.ts
@@ -229,7 +240,9 @@ AIExpHub/
 │   │   ├── utils/
 │   │   │   └── datetime.ts
 │   │   ├── components/
-│   │   │   └── ComparisonCharts.vue
+│   │   │   ├── ComparisonCharts.vue
+│   │   │   ├── CustomMetricChart.vue
+│   │   │   └── ProjectMetrics.vue
 │   │   ├── App.vue
 │   │   ├── main.ts
 │   │   └── style.css
@@ -250,6 +263,8 @@ AIExpHub/
 │   ├── design.md            # 当前整体设计
 │   ├── ai-assisted-development.md
 │   ├── final-acceptance-checklist.md
+│   ├── result-json-entry.md
+│   ├── project-metrics-proposal.md # 共享指标设计、使用与验证
 │   └── demo-script.md       # 演示草案，尚未录制
 ├── README.md
 └── .gitignore

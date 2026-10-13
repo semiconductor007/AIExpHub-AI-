@@ -12,6 +12,9 @@ import { compareExperiments } from '../api/compare'
 import type { ComparisonExperiment, ExperimentCompareResponse, MetricName } from '../api/compare'
 import { getApiErrorMessage } from '../api/errors'
 import ComparisonCharts from '../components/ComparisonCharts.vue'
+import CustomMetricChart from '../components/CustomMetricChart.vue'
+import { metricLabel } from '../api/metrics'
+import type { CustomMetricComparison } from '../api/compare'
 
 interface SelectedExperiment {
   id: number
@@ -51,6 +54,8 @@ const metrics: { key: MetricName; label: string }[] = [
   { key: 'accuracy', label: 'Accuracy' }, { key: 'precision', label: 'Precision' },
   { key: 'recall', label: 'Recall' }, { key: 'f1', label: 'F1' }, { key: 'loss', label: 'Loss' },
 ]
+const showBuiltinCharts = computed(() => !comparisonResult.value?.custom_metrics?.length
+  || comparisonResult.value.experiments.some(experiment => metrics.some(metric => experiment.result?.[metric.key] != null)))
 
 function clearCandidates(): void {
   experimentRequest += 1
@@ -208,12 +213,16 @@ function metricHeading(metric: MetricName, label: string): string {
   return `${label} ${comparisonResult.value?.best_by_metric[metric].direction === 'min' ? '↓' : '↑'}`
 }
 
+function customMetricHeading(metric: CustomMetricComparison): string {
+  return `${metric.project_name} / ${metricLabel(metric.definition)} ${metric.definition.direction === 'min' ? '↓' : '↑'}`
+}
+
 onMounted(loadProjects)
 onBeforeUnmount(() => { projectRequest += 1; batchRequest += 1; experimentRequest += 1; compareRequest += 1 })
 </script>
 
 <template>
-  <section class="page-heading"><h1>实验比较</h1><p>从不同项目与批次加入实验，比较五项当前结果指标。↑ 越大越好，↓ 越小越好。</p></section>
+  <section class="page-heading"><h1>实验比较</h1><p>比较系统指标及项目自定义指标。↑ 越大越好，↓ 越小越好；自定义指标按所属项目分别比较。</p></section>
   <el-card shadow="never" class="comparison-card">
     <template #header><div class="card-header"><h2>候选实验</h2>
       <div class="card-actions">
@@ -295,12 +304,26 @@ onBeforeUnmount(() => { projectRequest += 1; batchRequest += 1; experimentReques
             <span v-else>最佳 {{ comparisonResult.best_by_metric[metric.key].value }}<span v-if="comparisonResult.best_by_metric[metric.key].experiment_ids.length > 1">（{{ comparisonResult.best_by_metric[metric.key].experiment_ids.length }} 个实验并列）</span></span>
           </li>
         </ul>
-        <ComparisonCharts :result="comparisonResult" />
+        <ComparisonCharts v-if="showBuiltinCharts" :result="comparisonResult" />
+        <template v-if="comparisonResult.custom_metrics?.length">
+          <h3>项目自定义指标</h3>
+          <ul class="best-summary" aria-label="自定义指标最佳摘要">
+            <li v-for="metric in comparisonResult.custom_metrics" :key="`${metric.definition.project_id}:${metric.definition.key}`">
+              {{ customMetricHeading(metric) }}：
+              <span v-if="metric.best.value === null">暂无可比较数据</span>
+              <span v-else>最佳 {{ metric.best.value }}<span v-if="metric.best.experiment_ids.length > 1">（{{ metric.best.experiment_ids.length }} 个实验并列）</span></span>
+            </li>
+          </ul>
+          <CustomMetricChart v-for="metric in comparisonResult.custom_metrics" :key="`${metric.definition.project_id}:${metric.definition.key}`" :metric="metric" :experiments="comparisonResult.experiments" />
+        </template>
         <el-table :data="comparisonResult.experiments" row-key="id" aria-label="实验比较结果列表">
           <el-table-column prop="experiment_no" label="实验编号" min-width="120" show-overflow-tooltip />
           <el-table-column prop="model_name" label="模型名称" min-width="120" show-overflow-tooltip />
           <el-table-column label="项目" min-width="120" show-overflow-tooltip><template #default="{ row }">{{ projectName(row) }}</template></el-table-column>
           <el-table-column label="批次" min-width="110" show-overflow-tooltip><template #default="{ row }">{{ batchName(row) }}</template></el-table-column>
+          <el-table-column v-for="metric in comparisonResult.custom_metrics ?? []" :key="`${metric.definition.project_id}:${metric.definition.key}`" :label="customMetricHeading(metric)" min-width="180">
+            <template #default="{ row }"><div class="metric-cell"><span>{{ metric.values[row.id] ?? '-' }}</span><el-tag v-if="metric.best.experiment_ids.includes(row.id)" type="success" size="small">最佳</el-tag></div></template>
+          </el-table-column>
           <el-table-column v-for="metric in metrics" :key="metric.key" :label="metricHeading(metric.key, metric.label)" min-width="106">
             <template #default="{ row }"><div class="metric-cell"><span>{{ metricValue(row, metric.key) }}</span><el-tag v-if="isBest(row.id, metric.key)" type="success" size="small">最佳</el-tag></div></template>
           </el-table-column>
