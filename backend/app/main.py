@@ -11,7 +11,7 @@ from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.database import SessionLocal, engine, init_db
-from app.routers import batches, compare, experiments, metrics, projects, results
+from app.routers import batches, compare, experiments, imports, metrics, projects, results
 
 
 @asynccontextmanager
@@ -30,6 +30,7 @@ app.include_router(compare.router)
 app.include_router(experiments.router)
 app.include_router(results.router)
 app.include_router(metrics.router)
+app.include_router(imports.router)
 
 
 @app.exception_handler(RequestValidationError)

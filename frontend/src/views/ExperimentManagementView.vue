@@ -15,6 +15,8 @@ import { getProjectMetrics, metricLabel } from '../api/metrics'
 import type { MetricDefinition } from '../api/metrics'
 import { getApiErrorMessage, isApiErrorDetail } from '../api/errors'
 import { formatDateTime } from '../utils/datetime'
+import ExperimentImport from '../components/ExperimentImport.vue'
+import { readJsonFile } from '../utils/json-files'
 
 const route = useRoute()
 const router = useRouter()
@@ -34,7 +36,9 @@ const resultLoading = ref(false)
 const experimentSubmitting = ref(false)
 const resultSubmitting = ref(false)
 const experimentDeleting = ref(false)
-const busy = computed(() => experimentSubmitting.value || resultSubmitting.value || experimentDeleting.value)
+const importBusy = ref(false)
+const resultFileLoading = ref(false)
+const busy = computed(() => experimentSubmitting.value || resultSubmitting.value || experimentDeleting.value || importBusy.value || resultFileLoading.value)
 const projectsError = ref('')
 const batchesError = ref('')
 const metricDefinitions = ref<MetricDefinition[]>([])
@@ -321,6 +325,7 @@ const resultForm = reactive<Record<ResultMetric, string>>({ accuracy: '', precis
 const resultFormError = ref('')
 const resultJson = ref('')
 const resultJsonError = ref('')
+const resultFileError = ref('')
 const resultJsonPlaceholder = '{\n  "accuracy": 0.86,\n  "precision": 0.84,\n  "recall": 0.83,\n  "f1": 0.835,\n  "loss": 0.28\n}'
 
 function parseMetric(key: ResultMetric, text: string): number | null {
@@ -376,9 +381,21 @@ function fillResultFromJson(showMessage = true): void {
 }
 
 watch(resultJson, text => {
+  resultFileError.value = ''
   resultJsonError.value = ''
   if (resultDialogVisible.value && text.trim()) fillResultFromJson(false)
 }, { flush: 'sync' })
+
+async function loadResultFile(event: Event): Promise<void> {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  if (!file || busy.value) return
+  resultFileLoading.value = true
+  resultFileError.value = ''
+  try { resultJson.value = await readJsonFile(file); fillResultFromJson(false) }
+  catch (error) { resultFileError.value = `${error instanceof SyntaxError ? '文件不是合法 JSON，原输入未被覆盖。' : (error as Error).message} 请换文件，或关闭此提示后继续手动录入。` }
+  finally { resultFileLoading.value = false; input.value = '' }
+}
 
 const resultRules = computed<FormRules<typeof resultForm>>(() => Object.fromEntries(metrics.value.map(metric => [metric.key, [{
   trigger: 'blur', validator: (_rule: unknown, value: unknown, callback: (error?: Error) => void) => {
@@ -408,6 +425,7 @@ async function openResultDialog(): Promise<void> {
   resultFormError.value = ''
   resultJson.value = ''
   resultJsonError.value = ''
+  resultFileError.value = ''
   resultDialogVisible.value = true
   await nextTick()
   resultFormRef.value?.clearValidate()
@@ -415,7 +433,7 @@ async function openResultDialog(): Promise<void> {
 
 async function submitResult(): Promise<void> {
   if (busy.value || !resultFormRef.value || resultExperimentId.value === null) return
-  if (resultJsonError.value) return
+  if (resultJsonError.value || resultFileError.value) return
   resultSubmitting.value = true
   const target = resultExperimentId.value
   const editing = resultEditing.value
@@ -495,6 +513,8 @@ onBeforeUnmount(() => { contextRequest += 1; batchRequest += 1; experimentReques
       <div class="card-header">
         <h2>{{ selectedBatch ? `${selectedBatch.name} / 当前批次实验` : '当前批次实验' }}</h2>
         <div class="card-actions">
+          <ExperimentImport :project-id="projectId" :batch-id="batchId" :batch-name="selectedBatch?.name" :disabled="busy || experimentsLoading"
+                            @busy="importBusy = $event" @imported="loadExperiments" />
           <el-button :loading="experimentsLoading" :disabled="!batchId || busy" @click="loadExperiments">刷新实验</el-button>
           <el-button type="primary" :disabled="!batchId || busy || experimentsLoading" @click="openExperimentDialog()">新建实验</el-button>
         </div>
@@ -560,26 +580,28 @@ onBeforeUnmount(() => { contextRequest += 1; batchRequest += 1; experimentReques
   </el-dialog>
 
   <el-dialog v-model="resultDialogVisible" :title="resultEditing ? '编辑实验结果' : '录入实验结果'" width="min(520px, 92vw)" top="5vh"
-             :close-on-click-modal="!resultSubmitting" :close-on-press-escape="!resultSubmitting" :show-close="!resultSubmitting">
+             :close-on-click-modal="!busy" :close-on-press-escape="!busy" :show-close="!busy">
     <p class="hint">每项可留空，至少填写一项。系统指标保留原范围；自定义指标遵循项目配置的单位和上下限。</p>
     <section class="result-json-entry" aria-label="JSON 快速录入">
       <label for="result-json-input">JSON 快速录入（可选）</label>
       <p class="hint">粘贴合法 JSON 后自动填入下方指标，可继续手动修改，再点击保存。未提供或为 null 的指标会清空对应输入。</p>
+      <label class="json-file-label">选择结果 JSON 文件（最多 1 MiB）<input type="file" accept=".json,application/json" aria-label="结果 JSON 文件" :disabled="busy" @change="loadResultFile" /></label>
+      <el-alert v-if="resultFileError" :title="resultFileError" type="error" show-icon @close="resultFileError = ''" />
       <el-input id="result-json-input" v-model="resultJson" type="textarea" :rows="5" aria-label="结果 JSON"
-                :placeholder="resultJsonPlaceholder" :disabled="resultSubmitting" />
+                :placeholder="resultJsonPlaceholder" :disabled="busy" />
       <el-alert v-if="resultJsonError" :title="resultJsonError" type="error" :closable="false" show-icon />
-      <el-button :disabled="resultSubmitting || !resultJson.trim()" @click="fillResultFromJson()">重新填入指标</el-button>
+      <el-button :disabled="busy || !resultJson.trim()" @click="fillResultFromJson()">重新填入指标</el-button>
     </section>
     <el-alert v-if="resultFormError" :title="resultFormError" type="error" :closable="false" show-icon />
-    <el-form ref="resultFormRef" class="result-metric-form" :model="resultForm" :rules="resultRules" label-position="top" :disabled="resultSubmitting" @submit.prevent="submitResult">
+    <el-form ref="resultFormRef" class="result-metric-form" :model="resultForm" :rules="resultRules" label-position="top" :disabled="busy" @submit.prevent="submitResult">
       <el-form-item v-for="metric in metrics" :key="metric.key" :label="metric.label" :prop="metric.key">
         <p class="metric-hint">{{ metric.key }} · {{ metric.direction === 'max' ? '越大越好' : '越小越好' }} · {{ metric.lower_bound ?? '不限' }} ～ {{ metric.upper_bound ?? '不限' }}</p>
         <el-input v-model="resultForm[metric.key]" inputmode="decimal" :aria-label="metric.label" placeholder="留空表示无此指标" />
       </el-form-item>
     </el-form>
     <template #footer>
-      <el-button :disabled="resultSubmitting" @click="resultDialogVisible = false">取消</el-button>
-      <el-button type="primary" :loading="resultSubmitting" :disabled="resultSubmitting" @click="submitResult">保存结果</el-button>
+        <el-button :disabled="busy" @click="resultDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="resultSubmitting || resultFileLoading" :disabled="busy" @click="submitResult">保存结果</el-button>
     </template>
   </el-dialog>
 </template>
@@ -592,6 +614,8 @@ onBeforeUnmount(() => { contextRequest += 1; batchRequest += 1; experimentReques
 .result-json-entry > label { font-weight: 600; }
 .result-json-entry .el-alert { margin-top: 12px; }
 .result-json-entry .el-button { margin-top: 12px; }
+.json-file-label { display: block; margin-bottom: 12px; }
+.json-file-label input { display: block; margin-top: 8px; max-width: 100%; }
 .result-metric-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 16px; }
 .metric-hint { margin: 0 0 4px; color: #6b7280; font-size: 12px; width: 100%; }
 @media (max-width: 480px) {

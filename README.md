@@ -20,13 +20,15 @@
 
 ## 当前开发阶段
 
-阶段 1 至阶段 6A 已完成，阶段 6B 的核心页面闭环已有验证，实际窗口拖动、学生讲解和视频交付仍待人工完成。2026-10-13 完成另行授权的 JSON 自动填入与项目共享指标增量，最新 pytest 为 139 passed、1 warning，TypeScript / build 通过；临时验证数据已清理，用户原有数据保留。此次功能交付不代表课程最终验收通过。
+阶段 1 至阶段 6A 已完成，阶段 6B 的核心页面闭环已有验证，实际窗口拖动、学生讲解和视频交付仍待人工完成。2026-10-13 完成另行授权的 JSON 自动填入、项目共享指标、文件与批量导入增量，最新 pytest 为 169 passed、1 warning，文件读取 4 个测试和 TypeScript / build 通过；临时验证数据已清理，用户原有数据保留。此次功能交付不代表课程最终验收通过。
 
 ## 当前功能
 
+2026-10-13 新增 JSON 文件录入、项目模板下载和批量导入预览：实验管理选好批次后，上传文件、逐行核对 / 修正，再确认整批新增。重复编号或非法指标不覆盖已有数据；确认时重新校验，失败整批回滚。单结果文件自动填入后仍可手动修正。后端最新 169 个测试、文件读取 4 个测试通过，TypeScript / build 通过，原有数据保留。格式、限制和验证见 [JSON 文件与批量导入](docs/json-file-import.md)。
+
 后端提供 `/health` 健康检查、Project、ExperimentBatch 和 Experiment CRUD API，以及 ExperimentResult 首次录入、查询和完整更新 API、多实验比较 API、对应的 Pydantic Schema 与请求级数据库 Session。核心四个 ORM 模型及项目指标定义已建立，核心 API、数据库约束及比较规则已通过 pytest 自动验收。前端已实现首页功能入口与健康状态、Project / Batch 管理、Experiment / Result 管理、Experiment Compare 表格和 ECharts 指标比较可视化，以及明确的 404 页面。
 
-2026-10-13 完成经用户授权的项目级共享指标增量：在项目管理中选中项目后新增指标键、名称、单位、最佳方向和可选上下限，所有批次与实验共用定义，分别记录数值。结果 JSON 自动识别项目指标，比较表格和独立图表按项目、单位、方向展示最佳及并列结果。已有数值引用的定义仅允许改显示名称；原五项指标、跨项目比较和已有数据保留。最新 pytest 为 139 passed、1 warning（16.60s），TypeScript / build 通过。使用、API、升级与真实验证见 [项目共享指标](docs/project-metrics-proposal.md)，课程人工验收仍待完成。
+2026-10-13 完成经用户授权的项目级共享指标增量：在项目管理中选中项目后新增指标键、名称、单位、最佳方向和可选上下限，所有批次与实验共用定义，分别记录数值。结果 JSON 自动识别项目指标，比较表格和独立图表按项目、单位、方向展示最佳及并列结果。已有数值引用的定义仅允许改显示名称；原五项指标、跨项目比较和已有数据保留。该次共享指标验证为 139 passed、1 warning（16.60s），TypeScript / build 通过。使用、API、升级与真实验证见 [项目共享指标](docs/project-metrics-proposal.md)，课程人工验收仍待完成。
 
 使用顺序：在项目管理创建项目与批次，进入实验管理录入模型、JSON 参数及结果，再到实验比较跨项目加入至少两个实验，查看表格和双图；修改结果后点击重新比较读取最新值。示例数据与 7 分 30 秒演示草案见 [演示脚本](docs/demo-script.md)。
 
@@ -142,7 +144,7 @@ build 执行 `vue-tsc -b && vite build`，先类型检查，再生成 `frontend/
 
 测试通过 FastAPI TestClient 调用实际 HTTP 层，每个用例使用独立的 `tmp_path/test.db` SQLite 数据库并开启外键。Router 的 get_db 和健康检查的 Session 均指向测试数据库；TestClient 不进入生产 lifespan，测试守卫禁止生产 engine 连接或 init_db 执行。测试不会读取、清空或修改 `backend/data/aiexphub.db`。临时目录由 pytest 管理，结束后关闭会话、清空 dependency overrides 并 dispose 测试 engine。
 
-开发依赖固定 pytest 9.1.1、httpx 0.28.1，不改变生产运行依赖。当前有 139 个用例，包含原 102 个核心 / 比较用例、34 个共享指标用例和 3 个迁移用例，覆盖严格校验、数据库约束、项目隔离、最新结果、单条只读比较、引用保护和迁移保留 / 回滚；测试文件可独立执行。原 Swagger 测试同步增加比较路径和标签。现有 Starlette 1.7.0 会提示 TestClient 使用 httpx 的第三方弃用 warning，调用仍正常，未为消除 warning 升级框架或加入其他测试依赖。
+开发依赖固定 pytest 9.1.1、httpx 0.28.1，不改变生产运行依赖。当前有 169 个用例，包含原 102 个核心 / 比较用例、34 个共享指标用例、3 个迁移用例和 30 个导入用例，覆盖严格校验、数据库约束、项目隔离、最新结果、只读预览、整批回滚、引用保护和迁移保留 / 回滚；测试文件可独立执行。现有 Starlette 1.7.0 会提示 TestClient 使用 httpx 的第三方弃用 warning，调用仍正常，未为消除 warning 升级框架或加入其他测试依赖。前端文件读取测试使用现有 Node 运行：在 frontend 执行 `node --test tests/json-files.test.ts`，4 个测试通过，无额外测试依赖。
 
 ## 当前限制
 
@@ -200,7 +202,8 @@ AIExpHub/
 │   │       ├── experiments.py
 │   │       ├── compare.py
 │   │       ├── results.py
-│   │       └── metrics.py
+│   │       ├── metrics.py
+│   │       └── imports.py     # 模板、只读预览与整批事务导入
 │   ├── data/
 │   │   └── .gitkeep         # aiexphub.db 为运行时文件，不提交
 │   ├── tests/
@@ -213,7 +216,8 @@ AIExpHub/
 │   │   ├── test_compare.py
 │   │   ├── test_database_constraints.py
 │   │   ├── test_project_metrics.py
-│   │   └── test_metric_migration.py
+│   │   ├── test_metric_migration.py
+│   │   └── test_imports.py
 │   ├── pytest.ini
 │   ├── requirements-dev.txt
 │   └── requirements.txt
@@ -228,6 +232,7 @@ AIExpHub/
 │   │   │   ├── results.ts
 │   │   │   ├── compare.ts
 │   │   │   ├── metrics.ts
+│   │   │   ├── imports.ts
 │   │   │   └── errors.ts
 │   │   ├── router/
 │   │   │   └── index.ts
@@ -238,15 +243,18 @@ AIExpHub/
 │   │   │   ├── ExperimentComparisonView.vue
 │   │   │   └── NotFoundView.vue
 │   │   ├── utils/
-│   │   │   └── datetime.ts
+│   │   │   ├── datetime.ts
+│   │   │   └── json-files.ts
 │   │   ├── components/
 │   │   │   ├── ComparisonCharts.vue
 │   │   │   ├── CustomMetricChart.vue
-│   │   │   └── ProjectMetrics.vue
+│   │   │   ├── ProjectMetrics.vue
+│   │   │   └── ExperimentImport.vue
 │   │   ├── App.vue
 │   │   ├── main.ts
 │   │   └── style.css
 │   ├── index.html
+│   ├── tests/json-files.test.ts # 使用 Node 内置测试运行器
 │   ├── package.json
 │   ├── package-lock.json
 │   ├── tsconfig.json
@@ -264,6 +272,7 @@ AIExpHub/
 │   ├── ai-assisted-development.md
 │   ├── final-acceptance-checklist.md
 │   ├── result-json-entry.md
+│   ├── json-file-import.md
 │   ├── project-metrics-proposal.md # 共享指标设计、使用与验证
 │   └── demo-script.md       # 演示草案，尚未录制
 ├── README.md

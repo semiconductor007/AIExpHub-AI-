@@ -2,6 +2,8 @@
 
 本文保留阶段 4A 的核心 API 基线和无自定义指标的响应示例。2026-10-13 新增项目共享指标与 custom_metrics 扩展，详见 [当前共享指标 API 与规则](project-metrics-proposal.md#数据与-api)；最新完整结构以 /openapi.json 为准，现有前端已实现。
 
+同日新增 [JSON 导入 API](json-file-import.md#新增-api)：项目模板、批次导入预览及整批新增。仅接收 JSON，不覆盖已有实验；不改原 CRUD 或数据库关系。
+
 本地地址：`http://127.0.0.1:8000`。Swagger：`/docs`，OpenAPI：`/openapi.json`。Swagger 标签为 Health、Projects、Experiment Batches、Experiments、Experiment Results、Experiment Comparison。
 
 ## 接口列表

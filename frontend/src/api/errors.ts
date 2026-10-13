@@ -44,6 +44,9 @@ export function getApiErrorMessage(error: unknown, fallback = '操作失败，�
   }
   if (Array.isArray(detail)) {
     const messages = detail.filter(isRecord).map((item) => {
+      if (Array.isArray(item.loc) && item.loc.includes('experiments') && ['too_short', 'too_long', 'list_type'].includes(String(item.type))) return '导入文件必须包含 1～100 条实验记录。'
+      if (Array.isArray(item.loc) && item.loc.includes('format_version')) return '导入格式版本必须为 1，请使用当前项目模板。'
+      if (Array.isArray(item.loc) && item.loc.includes('metric_definitions')) return '模板中的指标定义格式不正确，请重新下载并保留定义信息。'
       if (Array.isArray(item.loc) && item.loc.includes('custom_metrics')) return '自定义指标必须是有限数值或 null，且使用项目已定义的指标键。'
       if (Array.isArray(item.loc) && item.loc.includes('experiment_ids')) return '请选择至少两个不同的有效实验进行比较。'
       const field = Array.isArray(item.loc) ? item.loc.at(-1) : undefined

@@ -150,10 +150,10 @@ def test_swagger_contains_only_current_endpoints(client):
     response = client.get("/openapi.json")
     assert response.status_code == 200
     paths = response.json()["paths"]
-    assert len(paths) == 11 and sum(len(methods) for methods in paths.values()) == 24
+    assert len(paths) == 14 and sum(len(methods) for methods in paths.values()) == 27
     assert set(paths["/projects/{project_id}/metrics"]) == {"get", "post"}
     assert set(paths["/projects/{project_id}/metrics/{metric_id}"]) == {"put", "delete"}
     assert set(paths["/experiments/{experiment_id}/result"]) == {"post", "get", "put"}
     tags = {tag for methods in paths.values() for operation in methods.values() for tag in operation["tags"]}
     assert set(paths["/experiments/compare"]) == {"post"}
-    assert tags == {"Health", "Projects", "Experiment Batches", "Experiments", "Experiment Results", "Experiment Comparison", "Project Metrics"}
+    assert tags == {"Health", "Projects", "Experiment Batches", "Experiments", "Experiment Results", "Experiment Comparison", "Project Metrics", "Experiment Import"}

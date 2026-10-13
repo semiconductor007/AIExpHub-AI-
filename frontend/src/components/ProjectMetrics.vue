@@ -4,12 +4,15 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { createProjectMetric, deleteProjectMetric, getProjectMetrics, updateProjectMetric } from '../api/metrics'
 import type { MetricDefinition, MetricDefinitionPayload } from '../api/metrics'
 import { getApiErrorMessage } from '../api/errors'
+import { getImportTemplate } from '../api/imports'
+import { downloadJson } from '../utils/json-files'
 
 const props = defineProps<{ projectId: number | null; projectName?: string }>()
 const metrics = ref<MetricDefinition[]>([])
 const loading = ref(false)
 const saving = ref(false)
 const removing = ref(false)
+const exporting = ref(false)
 const error = ref('')
 const dialog = ref(false)
 const formError = ref('')
@@ -17,6 +20,15 @@ const editingId = ref<number | null>(null)
 const targetProject = ref<number | null>(null)
 const form = reactive({ key: '', name: '', unit: '', direction: 'max' as 'max' | 'min', lower: '', upper: '' })
 let request = 0
+
+async function exportTemplate(): Promise<void> {
+  if (props.projectId === null || exporting.value) return
+  const target = props.projectId
+  exporting.value = true
+  try { downloadJson(await getImportTemplate(target), `AIExpHub-project-${target}-template.json`) }
+  catch (exception) { ElMessage.error(getApiErrorMessage(exception, '模板下载失败')) }
+  finally { exporting.value = false }
+}
 
 async function load(): Promise<void> {
   const target = props.projectId
@@ -89,7 +101,8 @@ onBeforeUnmount(() => { request += 1 })
 <template>
   <el-card class="management-card" shadow="never">
     <template #header><div class="card-header"><h2>{{ projectName ? `${projectName} / 共享评价指标` : '项目共享评价指标' }}</h2>
-      <div class="card-actions"><el-button :disabled="projectId === null || saving || removing" :loading="loading" @click="load">刷新指标</el-button>
+      <div class="card-actions"><el-button :disabled="projectId === null || saving || removing" :loading="exporting" @click="exportTemplate">下载项目 JSON 模板</el-button>
+        <el-button :disabled="projectId === null || saving || removing" :loading="loading" @click="load">刷新指标</el-button>
         <el-button type="primary" :disabled="projectId === null || loading || saving || removing" @click="open()">新增指标</el-button></div>
     </div></template>
     <el-empty v-if="projectId === null" description="请选择项目查看共享指标" />
