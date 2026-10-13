@@ -16,7 +16,7 @@ import type { MetricDefinition } from '../api/metrics'
 import { getApiErrorMessage, isApiErrorDetail } from '../api/errors'
 import { formatDateTime } from '../utils/datetime'
 import ExperimentImport from '../components/ExperimentImport.vue'
-import { readJsonFile } from '../utils/json-files'
+import ResultJsonMapper from '../components/ResultJsonMapper.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -323,10 +323,8 @@ const resultExperimentId = ref<number | null>(null)
 const resultFormRef = ref<FormInstance>()
 const resultForm = reactive<Record<ResultMetric, string>>({ accuracy: '', precision: '', recall: '', f1: '', loss: '' })
 const resultFormError = ref('')
-const resultJson = ref('')
-const resultJsonError = ref('')
-const resultFileError = ref('')
-const resultJsonPlaceholder = '{\n  "accuracy": 0.86,\n  "precision": 0.84,\n  "recall": 0.83,\n  "f1": 0.835,\n  "loss": 0.28\n}'
+const resultMappingBlocked = ref(false)
+const resultMapperVersion = ref(0)
 
 function parseMetric(key: ResultMetric, text: string): number | null {
   if (text.trim() === '') return null
@@ -341,60 +339,17 @@ function parseMetric(key: ResultMetric, text: string): number | null {
   return number
 }
 
-function fillResultFromJson(showMessage = true): void {
-  if (resultSubmitting.value) return
-  resultJsonError.value = ''
-  try {
-    let parsed: unknown
-    try { parsed = JSON.parse(resultJson.value) } catch { throw new Error('请输入合法的结果 JSON，键名需使用双引号。') }
-    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
-      throw new Error('结果 JSON 必须是对象。')
-    }
-    const values = parsed as Record<string, unknown>
-    const unknownKeys = Object.keys(values).filter(key => !metrics.value.some(metric => metric.key === key))
-    if (unknownKeys.length > 0) {
-      throw new Error(`项目未定义指标：${unknownKeys.join('、')}。请先在项目管理中添加，或修正键名。`)
-    }
-    const fields = {} as Record<ResultMetric, string>
-    for (const metric of metrics.value) {
+function applyResultMapping(values: Record<string, number | null>, replace: boolean): void {
+  const fields: Record<string, string> = {}
+  for (const metric of metrics.value) {
+    if (replace || Object.hasOwn(values, metric.key)) {
       const value = values[metric.key]
-      if (value === null || value === undefined) {
-        fields[metric.key] = ''
-        continue
-      }
-      if (typeof value !== 'number') throw new Error(`${metric.label} 必须是数值或 null，不接受字符串或布尔值。`)
-      try { parseMetric(metric.key, String(value)) } catch (error: unknown) {
-        throw new Error(`${metric.label}：${error instanceof Error ? error.message : '指标校验失败'}`)
-      }
-      fields[metric.key] = String(value)
+      fields[metric.key] = value === null || value === undefined ? '' : String(value)
     }
-    if (Object.values(fields).every(value => value === '')) {
-      throw new Error('实验结果至少需要一个有效指标，0 也是合法值。')
-    }
-    Object.assign(resultForm, fields)
-    resultFormError.value = ''
-    resultFormRef.value?.clearValidate()
-    if (showMessage) ElMessage.success('指标已填入，请核对后点击“保存结果”。')
-  } catch (error: unknown) {
-    resultJsonError.value = error instanceof Error ? error.message : '结果 JSON 校验失败。'
   }
-}
-
-watch(resultJson, text => {
-  resultFileError.value = ''
-  resultJsonError.value = ''
-  if (resultDialogVisible.value && text.trim()) fillResultFromJson(false)
-}, { flush: 'sync' })
-
-async function loadResultFile(event: Event): Promise<void> {
-  const input = event.target as HTMLInputElement
-  const file = input.files?.[0]
-  if (!file || busy.value) return
-  resultFileLoading.value = true
-  resultFileError.value = ''
-  try { resultJson.value = await readJsonFile(file); fillResultFromJson(false) }
-  catch (error) { resultFileError.value = `${error instanceof SyntaxError ? '文件不是合法 JSON，原输入未被覆盖。' : (error as Error).message} 请换文件，或关闭此提示后继续手动录入。` }
-  finally { resultFileLoading.value = false; input.value = '' }
+  Object.assign(resultForm, fields)
+  resultFormError.value = ''
+  resultFormRef.value?.clearValidate()
 }
 
 const resultRules = computed<FormRules<typeof resultForm>>(() => Object.fromEntries(metrics.value.map(metric => [metric.key, [{
@@ -423,9 +378,8 @@ async function openResultDialog(): Promise<void> {
     resultForm[metric.key] = value === null || value === undefined ? '' : String(value)
   }
   resultFormError.value = ''
-  resultJson.value = ''
-  resultJsonError.value = ''
-  resultFileError.value = ''
+  resultMappingBlocked.value = false
+  resultMapperVersion.value += 1
   resultDialogVisible.value = true
   await nextTick()
   resultFormRef.value?.clearValidate()
@@ -433,7 +387,7 @@ async function openResultDialog(): Promise<void> {
 
 async function submitResult(): Promise<void> {
   if (busy.value || !resultFormRef.value || resultExperimentId.value === null) return
-  if (resultJsonError.value || resultFileError.value) return
+  if (resultMappingBlocked.value) return
   resultSubmitting.value = true
   const target = resultExperimentId.value
   const editing = resultEditing.value
@@ -579,19 +533,11 @@ onBeforeUnmount(() => { contextRequest += 1; batchRequest += 1; experimentReques
     </template>
   </el-dialog>
 
-  <el-dialog v-model="resultDialogVisible" :title="resultEditing ? '编辑实验结果' : '录入实验结果'" width="min(520px, 92vw)" top="5vh"
+  <el-dialog v-model="resultDialogVisible" class="aiexphub-result-dialog" :title="resultEditing ? '编辑实验结果' : '录入实验结果'" width="min(780px, 94vw)" top="4vh"
              :close-on-click-modal="!busy" :close-on-press-escape="!busy" :show-close="!busy">
     <p class="hint">每项可留空，至少填写一项。系统指标保留原范围；自定义指标遵循项目配置的单位和上下限。</p>
-    <section class="result-json-entry" aria-label="JSON 快速录入">
-      <label for="result-json-input">JSON 快速录入（可选）</label>
-      <p class="hint">粘贴合法 JSON 后自动填入下方指标，可继续手动修改，再点击保存。未提供或为 null 的指标会清空对应输入。</p>
-      <label class="json-file-label">选择结果 JSON 文件（最多 1 MiB）<input type="file" accept=".json,application/json" aria-label="结果 JSON 文件" :disabled="busy" @change="loadResultFile" /></label>
-      <el-alert v-if="resultFileError" :title="resultFileError" type="error" show-icon @close="resultFileError = ''" />
-      <el-input id="result-json-input" v-model="resultJson" type="textarea" :rows="5" aria-label="结果 JSON"
-                :placeholder="resultJsonPlaceholder" :disabled="busy" />
-      <el-alert v-if="resultJsonError" :title="resultJsonError" type="error" :closable="false" show-icon />
-      <el-button :disabled="busy || !resultJson.trim()" @click="fillResultFromJson()">重新填入指标</el-button>
-    </section>
+    <ResultJsonMapper v-if="resultDialogVisible" :key="resultMapperVersion" :metrics="metricDefinitions" :disabled="resultSubmitting"
+                      @applied="applyResultMapping" @blocked="resultMappingBlocked = $event" @reading="resultFileLoading = $event" />
     <el-alert v-if="resultFormError" :title="resultFormError" type="error" :closable="false" show-icon />
     <el-form ref="resultFormRef" class="result-metric-form" :model="resultForm" :rules="resultRules" label-position="top" :disabled="busy" @submit.prevent="submitResult">
       <el-form-item v-for="metric in metrics" :key="metric.key" :label="metric.label" :prop="metric.key">
@@ -601,7 +547,7 @@ onBeforeUnmount(() => { contextRequest += 1; batchRequest += 1; experimentReques
     </el-form>
     <template #footer>
         <el-button :disabled="busy" @click="resultDialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="resultSubmitting || resultFileLoading" :disabled="busy" @click="submitResult">保存结果</el-button>
+        <el-button type="primary" :loading="resultSubmitting || resultFileLoading" :disabled="busy || resultMappingBlocked" @click="submitResult">保存结果</el-button>
     </template>
   </el-dialog>
 </template>
@@ -610,15 +556,14 @@ onBeforeUnmount(() => { contextRequest += 1; batchRequest += 1; experimentReques
 .hint { color: #6b7280; line-height: 1.7; }
 .result-content { min-height: 120px; }
 .edit-result { margin-top: 20px; }
-.result-json-entry { margin-bottom: 20px; padding-bottom: 20px; border-bottom: 1px solid #e5e7eb; }
-.result-json-entry > label { font-weight: 600; }
-.result-json-entry .el-alert { margin-top: 12px; }
-.result-json-entry .el-button { margin-top: 12px; }
-.json-file-label { display: block; margin-bottom: 12px; }
-.json-file-label input { display: block; margin-top: 8px; max-width: 100%; }
 .result-metric-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 16px; }
 .metric-hint { margin: 0 0 4px; color: #6b7280; font-size: 12px; width: 100%; }
 @media (max-width: 480px) {
   .result-metric-form { grid-template-columns: minmax(0, 1fr); }
 }
+</style>
+
+<style>
+/* The dialog is teleported outside this view; keep this rule scoped by its class. */
+.aiexphub-result-dialog .el-dialog__body { max-height: 70vh; overflow-y: auto; padding-right: 6px; }
 </style>

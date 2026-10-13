@@ -10,12 +10,13 @@ export function parseJsonText(text: string): unknown {
   return value
 }
 
-export async function readJsonFile(file: File): Promise<string> {
+export async function readJsonFile(file: File, strictNumbers = true): Promise<string> {
   if (!file.name.toLowerCase().endsWith('.json')) throw new Error('请选择 .json 文件。')
   if (file.size > MAX_JSON_BYTES) throw new Error('JSON 文件不能超过 1 MiB，请拆分后导入。')
   const text = (await file.text()).replace(/^\uFEFF/, '')
   // Validate before replacing the existing editable draft.
-  parseJsonText(text)
+  if (strictNumbers) parseJsonText(text)
+  else JSON.parse(text) // Result mapping validates only the explicitly selected metrics.
   return text
 }
 

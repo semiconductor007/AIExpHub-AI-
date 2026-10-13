@@ -22,3 +22,9 @@ test('overflow numbers cannot silently become null during HTTP serialization', a
   assert.throws(() => parseJsonText('{"experiments":[{"parameters":{"seed":1e400}}]}'), /有限数值/)
   await assert.rejects(readJsonFile(new File(['{"accuracy":0.8,"loss":1e400}'], 'overflow.json')), /有限数值/)
 })
+
+test('result inspection may ignore overflow metadata without weakening bulk parsing', async () => {
+  const file = new File(['{"memory":1e400,"accuracy":0.8}'], 'mixed.json')
+  await assert.rejects(readJsonFile(file), /有限数值/)
+  assert.equal(JSON.parse(await readJsonFile(file, false)).accuracy, 0.8)
+})
