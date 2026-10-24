@@ -7,6 +7,7 @@ from typing import Any
 
 from sqlalchemy import (
     JSON,
+    Boolean,
     CheckConstraint,
     DateTime,
     Float,
@@ -63,6 +64,31 @@ class ProjectMetric(Base):
     lower_bound: Mapped[float | None] = mapped_column(Float, nullable=True)
     upper_bound: Mapped[float | None] = mapped_column(Float, nullable=True)
     project: Mapped[Project] = relationship(back_populates="metrics")
+
+
+class ResultMappingTemplate(Base):
+    __tablename__ = "result_mapping_templates"
+    __table_args__ = (UniqueConstraint("project_id", "name", name="uq_mapping_template_name"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), nullable=False)
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    mappings: Mapped[list[ResultMappingEntry]] = relationship(
+        cascade="all, delete-orphan", passive_deletes=True, order_by="ResultMappingEntry.id", lazy="selectin"
+    )
+
+
+class ResultMappingEntry(Base):
+    __tablename__ = "result_mapping_entries"
+    __table_args__ = (UniqueConstraint("template_id", "metric_key", name="uq_mapping_entry_key"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    template_id: Mapped[int] = mapped_column(ForeignKey("result_mapping_templates.id", ondelete="CASCADE"), nullable=False)
+    metric_key: Mapped[str] = mapped_column(String, nullable=False)
+    # SET NULL permanently marks a deleted custom metric as invalid, even if its ID is reused.
+    metric_id: Mapped[int | None] = mapped_column(ForeignKey("project_metrics.id", ondelete="SET NULL"), nullable=True)
+    builtin: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    pointer: Mapped[str] = mapped_column(Text, nullable=False)
 
 
 class ExperimentBatch(Base):

@@ -12,6 +12,7 @@ export interface JsonField {
   key: string | null
   value: unknown
   leaf: boolean
+  arrayPath: boolean
 }
 
 export interface MetricDiscovery {
@@ -27,13 +28,13 @@ export function inspectMetricJson(text: string, metrics: MetricRule[]): MetricDi
   const keys = new Set(metrics.map(metric => metric.key))
   const candidates = new Map(metrics.map(metric => [metric.key, [] as JsonField[]]))
   const fields: JsonField[] = []
-  const stack: (Omit<JsonField, 'leaf'> & { depth: number })[] = [{ value: root, pointer: '', path: '$', key: null, depth: 0 }]
+  const stack: (Omit<JsonField, 'leaf'> & { depth: number })[] = [{ value: root, pointer: '', path: '$', key: null, depth: 0, arrayPath: false }]
   let visited = 0
   while (stack.length) {
     const node = stack.pop()!
     if (++visited > 100_000 || node.depth > 100) throw new Error('JSON 结构过大或嵌套过深，请只保留需要的结果子对象。')
     const leaf = node.value === null || typeof node.value !== 'object'
-    const field: JsonField = { pointer: node.pointer, path: node.path, key: node.key, value: node.value, leaf }
+    const field: JsonField = { pointer: node.pointer, path: node.path, key: node.key, value: node.value, leaf, arrayPath: node.arrayPath }
     const matches = node.key !== null && keys.has(node.key)
     if (leaf || matches) {
       fields.push(field)
@@ -48,7 +49,8 @@ export function inspectMetricJson(text: string, metrics: MetricRule[]): MetricDi
         const token = key.replace(/~/g, '~0').replace(/\//g, '~1')
         const suffix = Array.isArray(node.value) ? `[${key}]` : /^[a-zA-Z_$][\w$]*$/.test(key) ? `.${key}` : `[${JSON.stringify(key)}]`
         stack.push({ value, pointer: `${node.pointer}/${token}`, path: node.path + suffix,
-          key: Array.isArray(node.value) ? null : key, depth: node.depth + 1 })
+          key: Array.isArray(node.value) ? null : key, depth: node.depth + 1,
+          arrayPath: node.arrayPath || Array.isArray(node.value) })
       }
     }
   }

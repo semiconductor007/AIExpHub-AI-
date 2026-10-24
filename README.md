@@ -14,19 +14,21 @@
 | UI | Element Plus（当前全量注册） |
 | 图表 | ECharts 6.1.0（按模块引入，Canvas 渲染） |
 | 后端 | Python 3.12 + FastAPI + Uvicorn + Pydantic v2 |
-| ORM | SQLAlchemy 2.x（项目、批次、实验、结果及项目指标定义） |
+| ORM | SQLAlchemy 2.x（核心实体、项目指标定义及结果映射模板） |
 | 数据库 | SQLite |
 | 测试 | pytest + httpx / FastAPI TestClient（已建立后端验收测试） |
 
 ## 当前开发阶段
 
-阶段 1 至阶段 6A 已完成，阶段 6B 的核心页面闭环已有验证，实际窗口拖动、学生讲解和视频交付仍待人工完成。2026-10-13 完成另行授权的 JSON 自动填入、项目共享指标、文件与批量导入、基准差值比较与复杂 JSON 映射增量，最新 pytest 为 184 passed、1 warning，前端 24 个测试和 TypeScript / build 通过；临时验证数据已清理，用户原有数据保留。此次功能交付不代表课程最终验收通过。
+阶段 1 至阶段 6A 已完成，阶段 6B 的核心页面闭环已有验证，实际窗口拖动、学生讲解和视频交付仍待人工完成。2026-10-13 完成另行授权的 JSON 自动填入、项目共享指标、文件与批量导入、基准差值比较与复杂 JSON 映射增量，并于 2026-10-24 完成复制配置和项目级映射模板；最新 pytest 为 201 passed、1 warning，前端 33 个测试和 TypeScript / build 通过；临时验证数据已清理，用户原有数据保留。此次功能交付不代表课程最终验收通过。
 
 ## 当前功能
 
-2026-10-13 根据用户反馈增加复杂结果 JSON 识别与映射：可保留日志 / 元数据，按项目指标展示嵌套路径候选，多候选由用户选定，不同字段名可以手动映射。复杂模式先确认，再填入选定指标，未映射项保留当前输入；平铺指标继续自动填入。无关内容不写入 Result，指标范围与类型校验保持严格。前端最新 24 个测试、后端 184 个测试和 build 通过，见 [复杂 JSON 使用说明](docs/result-json-mapping.md)。
+2026-10-24 完成录入效率改进：实验列表“复制配置”预填模型、独立参数及备注，填写新编号后可保存到同项目其他批次，新实验不携带旧结果。结果弹窗可保存、使用、重命名、更新和删除项目级 JSON 映射模板；每次提取新文件数值，失效路径 / 指标须明确处理，应用后仍可手动修正。旧库先备份再新增模板表，原记录保留。使用、API 与验收见 [录入效率改进](docs/entry-efficiency.md)。
 
-2026-10-13 完成 I1：比较页可从已选实验中指定基准，表格保留原始指标与最佳标签，额外展示绝对差值及改善 / 退步 / 无变化；缺失结果和跨项目自定义指标明确提示无法比较。换基准清空旧结果，重新比较读取最新数据；图表继续展示原始值。该次 I1 验证为后端 184 个测试、前端 7 个测试和 build 通过，使用规则见 [基准差值比较](docs/baseline-comparison.md)。I2 配置复制未启动。
+2026-10-13 根据用户反馈增加复杂结果 JSON 识别与映射：可保留日志 / 元数据，按项目指标展示嵌套路径候选，多候选由用户选定，不同字段名可以手动映射。复杂模式先确认，再填入选定指标，未映射项保留当前输入；平铺指标继续自动填入。无关内容不写入 Result，指标范围与类型校验保持严格。该次前端 24 个测试、后端 184 个测试和 build 通过，见 [复杂 JSON 使用说明](docs/result-json-mapping.md)。
+
+2026-10-13 完成 I1：比较页可从已选实验中指定基准，表格保留原始指标与最佳标签，额外展示绝对差值及改善 / 退步 / 无变化；缺失结果和跨项目自定义指标明确提示无法比较。换基准清空旧结果，重新比较读取最新数据；图表继续展示原始值。该次 I1 验证为后端 184 个测试、前端 7 个测试和 build 通过，使用规则见 [基准差值比较](docs/baseline-comparison.md)。I2 配置复制与 E2 映射模板已于 2026-10-24 完成。
 
 2026-10-13 新增 JSON 文件录入、项目模板下载和批量导入预览：实验管理选好批次后，上传文件、逐行核对 / 修正，再确认整批新增。重复编号或非法指标不覆盖已有数据；确认时重新校验，失败整批回滚。单结果文件自动填入后仍可手动修正。该次导入验证为后端 169 个测试、文件读取 4 个测试通过，TypeScript / build 通过，原有数据保留。格式、限制和验证见 [JSON 文件与批量导入](docs/json-file-import.md)。
 
@@ -148,7 +150,7 @@ build 执行 `vue-tsc -b && vite build`，先类型检查，再生成 `frontend/
 
 测试通过 FastAPI TestClient 调用实际 HTTP 层，每个用例使用独立的 `tmp_path/test.db` SQLite 数据库并开启外键。Router 的 get_db 和健康检查的 Session 均指向测试数据库；TestClient 不进入生产 lifespan，测试守卫禁止生产 engine 连接或 init_db 执行。测试不会读取、清空或修改 `backend/data/aiexphub.db`。临时目录由 pytest 管理，结束后关闭会话、清空 dependency overrides 并 dispose 测试 engine。
 
-开发依赖固定 pytest 9.1.1、httpx 0.28.1，不改变生产运行依赖。当前有 184 个用例，包含原 102 个核心 / 比较用例、34 个共享指标用例、3 个迁移用例、30 个导入用例和 15 个基准比较用例，覆盖严格校验、数据库约束、项目隔离、最新结果、差值与缺失原因、只读预览、整批回滚、引用保护和迁移保留 / 回滚；测试文件可独立执行。现有 Starlette 1.7.0 会提示 TestClient 使用 httpx 的第三方弃用 warning，调用仍正常，未为消除 warning 升级框架或加入其他测试依赖。前端使用现有 Node 运行：在 frontend 执行 `node --test tests/json-files.test.ts tests/metric-delta.test.ts tests/json-metrics.test.ts`，24 个测试通过，无额外测试依赖。
+开发依赖固定 pytest 9.1.1、httpx 0.28.1，不改变生产运行依赖。当前有 201 个用例，包含原 102 个核心 / 比较用例、34 个共享指标用例、3 个迁移用例、30 个导入用例、15 个基准比较用例和 17 个映射模板用例，覆盖严格校验、数据库约束、项目隔离、最新结果、差值与缺失原因、只读预览、整批回滚、引用保护和迁移保留 / 回滚；测试文件可独立执行。现有 Starlette 1.7.0 会提示 TestClient 使用 httpx 的第三方弃用 warning，调用仍正常，未为消除 warning 升级框架或加入其他测试依赖。前端使用现有 Node 运行：在 frontend 执行 `node --test tests/*.test.ts`，33 个测试通过，无额外测试依赖。
 
 ## 当前限制
 
@@ -199,6 +201,7 @@ AIExpHub/
 │   │   ├── migrations.py    # 旧结果表指定升级与备份
 │   │   ├── metric_constraints.py # 自定义指标 SQLite 触发器
 │   │   ├── comparison_deltas.py # 已加载指标的基准差值计算
+│   │   ├── mapping_schemas.py # 结果映射模板请求 / 响应
 │   │   ├── schemas.py       # 业务实体与比较请求 / 响应 Schema
 │   │   └── routers/
 │   │       ├── __init__.py
@@ -208,6 +211,7 @@ AIExpHub/
 │   │       ├── compare.py
 │   │       ├── results.py
 │   │       ├── metrics.py
+│   │       ├── mapping_templates.py # 项目级结果路径模板
 │   │       └── imports.py     # 模板、只读预览与整批事务导入
 │   ├── data/
 │   │   └── .gitkeep         # aiexphub.db 为运行时文件，不提交
@@ -223,7 +227,8 @@ AIExpHub/
 │   │   ├── test_project_metrics.py
 │   │   ├── test_metric_migration.py
 │   │   ├── test_imports.py
-│   │   └── test_baseline_compare.py
+│   │   ├── test_baseline_compare.py
+│   │   └── test_mapping_templates.py
 │   ├── pytest.ini
 │   ├── requirements-dev.txt
 │   └── requirements.txt
@@ -238,6 +243,7 @@ AIExpHub/
 │   │   │   ├── results.ts
 │   │   │   ├── compare.ts
 │   │   │   ├── metrics.ts
+│   │   │   ├── mapping-templates.ts
 │   │   │   ├── imports.ts
 │   │   │   └── errors.ts
 │   │   ├── router/
@@ -252,6 +258,8 @@ AIExpHub/
 │   │   │   ├── datetime.ts
 │   │   │   ├── json-files.ts
 │   │   │   ├── metric-delta.ts
+│   │   │   ├── experiment-copy.ts
+│   │   │   ├── mapping-templates.ts
 │   │   │   └── json-metrics.ts
 │   │   ├── components/
 │   │   │   ├── ComparisonCharts.vue
@@ -259,6 +267,7 @@ AIExpHub/
 │   │   │   ├── ProjectMetrics.vue
 │   │   │   ├── ExperimentImport.vue
 │   │   │   ├── MetricDeltaDisplay.vue
+│   │   │   ├── ResultMappingTemplates.vue
 │   │   │   └── ResultJsonMapper.vue
 │   │   ├── App.vue
 │   │   ├── main.ts
@@ -267,6 +276,8 @@ AIExpHub/
 │   ├── tests/                # 使用 Node 内置测试运行器
 │   │   ├── json-files.test.ts
 │   │   ├── metric-delta.test.ts
+│   │   ├── experiment-copy.test.ts
+│   │   ├── mapping-templates.test.ts
 │   │   └── json-metrics.test.ts
 │   ├── package.json
 │   ├── package-lock.json
@@ -288,6 +299,7 @@ AIExpHub/
 │   ├── json-file-import.md
 │   ├── baseline-comparison.md
 │   ├── result-json-mapping.md
+│   ├── entry-efficiency.md
 │   ├── improvement-plan.md
 │   ├── project-metrics-proposal.md # 共享指标设计、使用与验证
 │   └── demo-script.md       # 演示草案，尚未录制

@@ -564,7 +564,7 @@ onBeforeUnmount(() => { contextRequest += 1; batchRequest += 1; experimentReques
   <el-dialog v-model="resultDialogVisible" class="aiexphub-result-dialog" :title="resultEditing ? '编辑实验结果' : '录入实验结果'" width="min(780px, 94vw)" top="4vh"
              :close-on-click-modal="!busy" :close-on-press-escape="!busy" :show-close="!busy">
     <p class="hint">每项可留空，至少填写一项。系统指标保留原范围；自定义指标遵循项目配置的单位和上下限。</p>
-    <ResultJsonMapper v-if="resultDialogVisible" :key="resultMapperVersion" :metrics="metricDefinitions" :disabled="resultSubmitting"
+    <ResultJsonMapper v-if="resultDialogVisible" :key="resultMapperVersion" :project-id="projectId ?? 0" :metrics="metricDefinitions" :disabled="resultSubmitting"
                       @applied="applyResultMapping" @blocked="resultMappingBlocked = $event" @reading="resultFileLoading = $event" />
     <el-alert v-if="resultFormError" :title="resultFormError" type="error" :closable="false" show-icon />
     <el-form ref="resultFormRef" class="result-metric-form" :model="resultForm" :rules="resultRules" label-position="top" :disabled="busy" @submit.prevent="submitResult">

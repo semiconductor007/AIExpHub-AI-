@@ -8,6 +8,26 @@ from sqlalchemy import Engine
 from sqlalchemy.schema import CreateTable
 
 
+def backup_before_mapping_templates(engine: Engine) -> Path | None:
+    """Adding two independent tables needs no row rewrite; back up existing stores first."""
+    with engine.connect() as connection:
+        tables = {row[0] for row in connection.exec_driver_sql("SELECT name FROM sqlite_master WHERE type='table'")}
+    if "projects" not in tables or {"result_mapping_templates", "result_mapping_entries"} <= tables:
+        return None
+    database = engine.url.database
+    if not database or database == ":memory:":
+        return None
+    path = Path(database)
+    backup = path.with_name(f"{path.stem}.pre-mapping-templates-{datetime.now(UTC).strftime('%Y%m%dT%H%M%S%fZ')}.db")
+    raw = engine.raw_connection()
+    try:
+        with sqlite3.connect(backup) as destination:
+            raw.driver_connection.backup(destination)
+    finally:
+        raw.close()
+    return backup
+
+
 def upgrade_project_metrics(engine: Engine) -> Path | None:
     from app.models import ExperimentResult
 

@@ -44,6 +44,7 @@ export function getApiErrorMessage(error: unknown, fallback = '操作失败，�
   }
   if (Array.isArray(detail)) {
     const messages = detail.filter(isRecord).map((item) => {
+      if (Array.isArray(item.loc) && item.loc.includes('mappings')) return '模板映射配置无效，请检查指标身份及来源路径；同一指标只能映射一次。'
       if (Array.isArray(item.loc) && item.loc.includes('experiments') && ['too_short', 'too_long', 'list_type'].includes(String(item.type))) return '导入文件必须包含 1～100 条实验记录。'
       if (Array.isArray(item.loc) && item.loc.includes('format_version')) return '导入格式版本必须为 1，请使用当前项目模板。'
       if (Array.isArray(item.loc) && item.loc.includes('metric_definitions')) return '模板中的指标定义格式不正确，请重新下载并保留定义信息。'

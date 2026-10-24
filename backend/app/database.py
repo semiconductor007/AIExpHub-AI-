@@ -49,9 +49,10 @@ def get_db() -> Iterator[Session]:
 
 def init_db() -> None:
     from app import models  # Register the business models before creating tables.
-    from app.migrations import upgrade_project_metrics
+    from app.migrations import backup_before_mapping_templates, upgrade_project_metrics
     from app.metric_constraints import install_metric_constraints
 
     upgrade_project_metrics(engine)
+    backup_before_mapping_templates(engine)
     Base.metadata.create_all(bind=engine)
     install_metric_constraints(engine)
