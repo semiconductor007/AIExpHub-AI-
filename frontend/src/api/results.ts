@@ -1,4 +1,5 @@
 import client from './client'
+import { publishComparisonChange } from '../utils/comparison-changes'
 
 export interface ExperimentResult {
   id: number
@@ -29,9 +30,13 @@ export async function getExperimentResult(experimentId: number): Promise<Experim
 }
 
 export async function createExperimentResult(experimentId: number, payload: ResultPayload): Promise<ExperimentResult> {
-  return (await client.post<ExperimentResult>(`/experiments/${experimentId}/result`, payload)).data
+  const saved = (await client.post<ExperimentResult>(`/experiments/${experimentId}/result`, payload)).data
+  publishComparisonChange({ kind: 'experiment', id: experimentId })
+  return saved
 }
 
 export async function updateExperimentResult(experimentId: number, payload: ResultPayload): Promise<ExperimentResult> {
-  return (await client.put<ExperimentResult>(`/experiments/${experimentId}/result`, payload)).data
+  const saved = (await client.put<ExperimentResult>(`/experiments/${experimentId}/result`, payload)).data
+  publishComparisonChange({ kind: 'experiment', id: experimentId })
+  return saved
 }

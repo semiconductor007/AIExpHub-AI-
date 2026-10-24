@@ -20,9 +20,11 @@
 
 ## 当前开发阶段
 
-阶段 1 至阶段 6A 已完成，阶段 6B 的核心页面闭环已有验证，实际窗口拖动、学生讲解和视频交付仍待人工完成。2026-10-13 完成另行授权的 JSON 自动填入、项目共享指标、文件与批量导入、基准差值比较与复杂 JSON 映射增量，并于 2026-10-24 完成复制配置和项目级映射模板；最新 pytest 为 201 passed、1 warning，前端 33 个测试和 TypeScript / build 通过；临时验证数据已清理，用户原有数据保留。此次功能交付不代表课程最终验收通过。
+阶段 1 至阶段 6A 已完成，阶段 6B 的核心页面闭环已有验证，实际窗口拖动、学生讲解和视频交付仍待人工完成。2026-10-13 完成另行授权的 JSON 自动填入、项目共享指标、文件与批量导入、基准差值比较与复杂 JSON 映射增量，并于 2026-10-24 完成复制配置、项目级映射模板及比较页轻量自动同步；最新 pytest 为 201 passed、1 warning，前端 42 个测试和 TypeScript / build 通过；临时验证数据已清理，用户原有数据保留。此次功能交付不代表课程最终验收通过。
 
 ## 当前功能
+
+2026-10-24 完成比较页轻量自动同步：首次比较后，同源标签页保存相关结果 / 配置 / 指标定义，以及切回已打开的比较页时自动获取最新比较。连续通知合并、隐藏页等待恢复可见；选择、基准和图例开关保留。网络失败保留上次数据并标明未更新，已知实验删除则清除旧表图；手动重新比较保留。未增加服务器推送、轮询或后端接口。详见 [使用与验证](docs/comparison-auto-sync.md)。
 
 2026-10-24 完成录入效率改进：实验列表“复制配置”预填模型、独立参数及备注，填写新编号后可保存到同项目其他批次，新实验不携带旧结果。结果弹窗可保存、使用、重命名、更新和删除项目级 JSON 映射模板；每次提取新文件数值，失效路径 / 指标须明确处理，应用后仍可手动修正。旧库先备份再新增模板表，原记录保留。使用、API 与验收见 [录入效率改进](docs/entry-efficiency.md)。
 
@@ -36,7 +38,7 @@
 
 2026-10-13 完成经用户授权的项目级共享指标增量：在项目管理中选中项目后新增指标键、名称、单位、最佳方向和可选上下限，所有批次与实验共用定义，分别记录数值。结果 JSON 自动识别项目指标，比较表格和独立图表按项目、单位、方向展示最佳及并列结果。已有数值引用的定义仅允许改显示名称；原五项指标、跨项目比较和已有数据保留。该次共享指标验证为 139 passed、1 warning（16.60s），TypeScript / build 通过。使用、API、升级与真实验证见 [项目共享指标](docs/project-metrics-proposal.md)，课程人工验收仍待完成。
 
-使用顺序：在项目管理创建项目与批次，进入实验管理录入模型、JSON 参数及结果，再到实验比较跨项目加入至少两个实验，查看表格和双图；修改结果后点击重新比较读取最新值。示例数据与 7 分 30 秒演示草案见 [演示脚本](docs/demo-script.md)。
+使用顺序：在项目管理创建项目与批次，进入实验管理录入模型、JSON 参数及结果，再到实验比较跨项目加入至少两个实验，查看表格和双图；同源页面修改结果后自动同步，切回比较页检查最新值，也可手动重新比较。示例数据与 7 分 30 秒演示草案见 [演示脚本](docs/demo-script.md)。
 
 2026-10-12 经用户另行确认，增加结果 JSON 快速录入：在“录入结果”或“编辑结果”弹窗粘贴指标对象后自动填入表单，核对或修改下方数值后点击“保存结果”；“重新填入指标”仅用于再次应用 JSON。未提供或为 null 的指标会清空对应输入，非法 JSON 不覆盖已填内容并阻止保存，可修改 JSON 或清空后手动录入。示例与本次验证见 [JSON 快速录入说明](docs/result-json-entry.md)。此增量改进不表示阶段 6B 人工验收已完成。
 
@@ -135,7 +137,7 @@ build 执行 `vue-tsc -b && vite build`，先类型检查，再生成 `frontend/
 
 比较结果按“最佳指标摘要 → 可视化 → 精确表格”展示。ComparisonCharts.vue 只接收同一份 Compare Response，不请求 API、不计算最优值；Accuracy / Precision / Recall / F1 使用四系列分组柱状图，Y 轴固定 0–1，Loss 使用独立的自适应数值轴（下界为 0）。横轴保持响应中的实验编号顺序，长编号旋转并截断。null 保持缺失、0 保留真实数值，Tooltip 显示原始值或 `-`，不转百分比或归一化。
 
-最佳与并列最佳仅根据 best_by_metric.experiment_ids 显示柱顶标签，loss=0 时标签仍位于零轴上方。综合四项全空或 Loss 全空时分别显示独立空状态。重新比较期间使用加载遮罩，成功后表格与图表同时更新；失败或选择变化清空旧结果。组件复用实例并使用 setOption(notMerge)、ResizeObserver.resize，卸载时 disconnect / dispose。仅新增直接依赖 echarts，采用官方 BarChart、GridComponent、TooltipComponent、LegendComponent、CanvasRenderer 模块；未引入图表包装库或打包插件，初始化及尺寸管理参考 [ECharts 官方说明](https://echarts.apache.org/handbook/en/basics/import/)。
+最佳与并列最佳仅根据 best_by_metric.experiment_ids 显示柱顶标签，loss=0 时标签仍位于零轴上方。综合四项全空或 Loss 全空时分别显示独立空状态。重新比较期间使用加载遮罩，成功后表格与图表同时更新；网络更新失败保留旧结果并显示明确提示，资源不存在或选择变化清空旧结果。组件复用实例、保留图例显示状态并使用 setOption(notMerge)、ResizeObserver.resize，卸载时 disconnect / dispose。仅新增直接依赖 echarts，采用官方 BarChart、GridComponent、TooltipComponent、LegendComponent、CanvasRenderer 模块；未引入图表包装库或打包插件，初始化及尺寸管理参考 [ECharts 官方说明](https://echarts.apache.org/handbook/en/basics/import/)。
 
 ## 后端测试
 
@@ -150,7 +152,7 @@ build 执行 `vue-tsc -b && vite build`，先类型检查，再生成 `frontend/
 
 测试通过 FastAPI TestClient 调用实际 HTTP 层，每个用例使用独立的 `tmp_path/test.db` SQLite 数据库并开启外键。Router 的 get_db 和健康检查的 Session 均指向测试数据库；TestClient 不进入生产 lifespan，测试守卫禁止生产 engine 连接或 init_db 执行。测试不会读取、清空或修改 `backend/data/aiexphub.db`。临时目录由 pytest 管理，结束后关闭会话、清空 dependency overrides 并 dispose 测试 engine。
 
-开发依赖固定 pytest 9.1.1、httpx 0.28.1，不改变生产运行依赖。当前有 201 个用例，包含原 102 个核心 / 比较用例、34 个共享指标用例、3 个迁移用例、30 个导入用例、15 个基准比较用例和 17 个映射模板用例，覆盖严格校验、数据库约束、项目隔离、最新结果、差值与缺失原因、只读预览、整批回滚、引用保护和迁移保留 / 回滚；测试文件可独立执行。现有 Starlette 1.7.0 会提示 TestClient 使用 httpx 的第三方弃用 warning，调用仍正常，未为消除 warning 升级框架或加入其他测试依赖。前端使用现有 Node 运行：在 frontend 执行 `node --test tests/*.test.ts`，33 个测试通过，无额外测试依赖。
+开发依赖固定 pytest 9.1.1、httpx 0.28.1，不改变生产运行依赖。当前有 201 个用例，包含原 102 个核心 / 比较用例、34 个共享指标用例、3 个迁移用例、30 个导入用例、15 个基准比较用例和 17 个映射模板用例，覆盖严格校验、数据库约束、项目隔离、最新结果、差值与缺失原因、只读预览、整批回滚、引用保护和迁移保留 / 回滚；测试文件可独立执行。现有 Starlette 1.7.0 会提示 TestClient 使用 httpx 的第三方弃用 warning，调用仍正常，未为消除 warning 升级框架或加入其他测试依赖。前端使用现有 Node 运行：在 frontend 执行 `node --test tests/*.test.ts`，42 个测试通过，无额外测试依赖。
 
 ## 当前限制
 
@@ -258,6 +260,8 @@ AIExpHub/
 │   │   │   ├── datetime.ts
 │   │   │   ├── json-files.ts
 │   │   │   ├── metric-delta.ts
+│   │   │   ├── comparison-changes.ts
+│   │   │   ├── comparison-refresh.ts
 │   │   │   ├── experiment-copy.ts
 │   │   │   ├── mapping-templates.ts
 │   │   │   └── json-metrics.ts
@@ -276,6 +280,7 @@ AIExpHub/
 │   ├── tests/                # 使用 Node 内置测试运行器
 │   │   ├── json-files.test.ts
 │   │   ├── metric-delta.test.ts
+│   │   ├── comparison-sync.test.ts
 │   │   ├── experiment-copy.test.ts
 │   │   ├── mapping-templates.test.ts
 │   │   └── json-metrics.test.ts
@@ -299,6 +304,7 @@ AIExpHub/
 │   ├── json-file-import.md
 │   ├── baseline-comparison.md
 │   ├── result-json-mapping.md
+│   ├── comparison-auto-sync.md
 │   ├── entry-efficiency.md
 │   ├── improvement-plan.md
 │   ├── project-metrics-proposal.md # 共享指标设计、使用与验证

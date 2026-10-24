@@ -76,8 +76,8 @@ export interface ExperimentCompareRequest {
   baseline_experiment_id?: number
 }
 
-export async function compareExperiments(experimentIds: number[], baselineId: number | null = null): Promise<ExperimentCompareResponse> {
+export async function compareExperiments(experimentIds: number[], baselineId: number | null = null, signal?: AbortSignal): Promise<ExperimentCompareResponse> {
   const payload: ExperimentCompareRequest = { experiment_ids: experimentIds }
   if (baselineId !== null) payload.baseline_experiment_id = baselineId
-  return (await client.post<ExperimentCompareResponse>('/experiments/compare', payload)).data
+  return (await client.post<ExperimentCompareResponse>('/experiments/compare', payload, { signal })).data
 }

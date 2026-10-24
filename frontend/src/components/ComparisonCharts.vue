@@ -70,12 +70,14 @@ function series(metric: { key: MetricName; label: string }): BarSeriesOption {
   }
 }
 
-function option(metrics: { key: MetricName; label: string }[], comprehensive: boolean): ChartOption {
+function option(metrics: { key: MetricName; label: string }[], comprehensive: boolean, chart?: EChartsType): ChartOption {
+  // Preserve the user's legend visibility when fresh data replaces the series.
+  const legends = chart?.getOption()?.legend as { selected?: Record<string, boolean> }[] | undefined
   return {
     animation: false,
     color: comprehensive ? ['#409eff', '#67c23a', '#e6a23c', '#a78bfa'] : ['#409eff'],
     grid: { left: 48, right: 24, top: 52, bottom: 72 },
-    legend: { data: metrics.map(metric => metric.label), top: 4 },
+    legend: { data: metrics.map(metric => metric.label), top: 4, selected: legends?.[0]?.selected ?? {} },
     tooltip: tooltip(metrics),
     xAxis: {
       type: 'category', data: props.result.experiments.map(experiment => experiment.experiment_no),
@@ -96,11 +98,11 @@ async function renderCharts(): Promise<void> {
   if (!mounted) return
   if (hasComprehensiveData.value && comprehensiveContainer.value) {
     comprehensiveChart ??= init(comprehensiveContainer.value)
-    comprehensiveChart.setOption(option(comprehensiveMetrics, true), { notMerge: true })
+    comprehensiveChart.setOption(option(comprehensiveMetrics, true, comprehensiveChart), { notMerge: true })
   } else comprehensiveChart?.clear()
   if (hasLossData.value && lossContainer.value) {
     lossChart ??= init(lossContainer.value)
-    lossChart.setOption(option(lossMetric, false), { notMerge: true })
+    lossChart.setOption(option(lossMetric, false, lossChart), { notMerge: true })
   } else lossChart?.clear()
   resizeCharts()
 }

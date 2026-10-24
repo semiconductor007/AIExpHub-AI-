@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
+import { isAxiosError } from 'axios'
 import { getProjects } from '../api/projects'
 import type { Project } from '../api/projects'
 import { getProjectBatches } from '../api/batches'
@@ -16,6 +17,9 @@ import CustomMetricChart from '../components/CustomMetricChart.vue'
 import { metricLabel } from '../api/metrics'
 import type { CustomMetricComparison } from '../api/compare'
 import MetricDeltaDisplay from '../components/MetricDeltaDisplay.vue'
+import { affectsComparison, subscribeComparisonChanges } from '../utils/comparison-changes'
+import type { ComparisonChange } from '../utils/comparison-changes'
+import { createComparisonRefresh } from '../utils/comparison-refresh'
 
 interface SelectedExperiment {
   id: number
@@ -51,6 +55,23 @@ const projectsError = ref('')
 const batchesError = ref('')
 const experimentsError = ref('')
 const compareError = ref('')
+const comparisonStarted = ref(false)
+const dataStale = ref(false)
+const lastUpdated = ref<number | null>(null)
+const refreshingAutomatically = ref(false)
+let compareAbort: AbortController | undefined
+let unsubscribeChanges: (() => void) | undefined
+const autoRefresh = createComparisonRefresh({
+  enabled: () => comparisonStarted.value && selectedExperiments.value.length >= 2,
+  visible: () => document.visibilityState === 'visible',
+  busy: () => compareLoading.value,
+  refresh: () => refreshComparison(true),
+})
+const syncStatus = computed(() => {
+  if (compareLoading.value) return refreshingAutomatically.value ? '正在自动获取最新比较结果…' : '正在获取比较结果…'
+  if (comparisonResult.value && dataStale.value) return '下方显示上次成功获取的结果，当前数据尚未确认最新。'
+  return lastUpdated.value === null ? '' : `最近获取：${new Date(lastUpdated.value).toLocaleTimeString('zh-CN', { hour12: false })}`
+})
 let projectRequest = 0
 let batchRequest = 0
 let experimentRequest = 0
@@ -150,6 +171,12 @@ function selectBatch(): void {
 
 function clearComparison(): void {
   compareRequest += 1
+  compareAbort?.abort()
+  compareLoading.value = false
+  autoRefresh.clear()
+  comparisonStarted.value = false
+  dataStale.value = false
+  lastUpdated.value = null
   comparisonResult.value = null
   compareError.value = ''
 }
@@ -185,23 +212,70 @@ function clearSelection(): void {
   clearComparison()
 }
 
-async function startComparison(): Promise<void> {
+function startComparison(): void { void refreshComparison(false) }
+
+async function refreshComparison(automatic: boolean): Promise<void> {
   if (compareLoading.value || selectedExperiments.value.length < 2) return
+  if (automatic && !comparisonStarted.value) return
+  if (!automatic) autoRefresh.clear()
+  comparisonStarted.value = true
   const request = ++compareRequest
   const ids = selectedExperiments.value.map(experiment => experiment.id)
   const baseline = baselineId.value
+  const controller = new AbortController()
+  compareAbort = controller
+  refreshingAutomatically.value = automatic
   compareLoading.value = true
   compareError.value = ''
   try {
-    const response = await compareExperiments(ids, baseline)
-    if (request === compareRequest) comparisonResult.value = response
-  } catch (error: unknown) {
-    if (request === compareRequest) {
-      comparisonResult.value = null
-      compareError.value = getApiErrorMessage(error, '实验比较失败，请重试。')
-      ElMessage.error(compareError.value)
+    const response = await compareExperiments(ids, baseline, controller.signal)
+    if (request !== compareRequest) return
+    comparisonResult.value = response
+    lastUpdated.value = Date.now()
+    dataStale.value = autoRefresh.hasPending()
+    for (const selected of selectedExperiments.value) {
+      const latest = response.experiments.find(item => item.id === selected.id)
+      if (latest) { selected.experiment_no = latest.experiment_no; selected.model_name = latest.model_name }
     }
-  } finally { if (request === compareRequest) compareLoading.value = false }
+  } catch (error: unknown) {
+    if (request !== compareRequest || controller.signal.aborted) return
+    const missing = isAxiosError(error) && error.response?.status === 404
+    if (missing) {
+      comparisonResult.value = null
+      lastUpdated.value = null
+      comparisonStarted.value = false
+      autoRefresh.clear()
+    }
+    dataStale.value = true
+    const detail = getApiErrorMessage(error, '实验比较失败，请重试。')
+    compareError.value = comparisonResult.value
+      ? `更新失败，当前显示上次成功数据。${detail} 可点击“重新比较”重试。`
+      : detail
+    if (!automatic) ElMessage.error(compareError.value)
+  } finally {
+    if (request === compareRequest) {
+      compareLoading.value = false
+      compareAbort = undefined
+      autoRefresh.settle()
+    }
+  }
+}
+
+function receiveChange(change: ComparisonChange): void {
+  if (!affectsComparison(change, selectedExperiments.value)) return
+  if (change.kind === 'experiment' && change.deleted) {
+    clearComparison()
+    experiments.value = experiments.value.filter(item => item.id !== change.id)
+    compareError.value = `已选实验 ID ${change.id} 已删除，请移除该实验后重新比较。`
+    return
+  }
+  if (comparisonStarted.value) dataStale.value = true
+  autoRefresh.request()
+}
+
+function checkLatest(): void {
+  if (document.visibilityState !== 'visible') return
+  autoRefresh.request()
 }
 
 function projectName(experiment: ComparisonExperiment): string {
@@ -231,8 +305,20 @@ function customMetricHeading(metric: CustomMetricComparison): string {
   return `${metric.project_name} / ${metricLabel(metric.definition)} ${metric.definition.direction === 'min' ? '↓' : '↑'}`
 }
 
-onMounted(loadProjects)
-onBeforeUnmount(() => { projectRequest += 1; batchRequest += 1; experimentRequest += 1; compareRequest += 1 })
+onMounted(() => {
+  void loadProjects()
+  unsubscribeChanges = subscribeComparisonChanges(receiveChange)
+  window.addEventListener('focus', checkLatest)
+  document.addEventListener('visibilitychange', checkLatest)
+})
+onBeforeUnmount(() => {
+  projectRequest += 1; batchRequest += 1; experimentRequest += 1; compareRequest += 1
+  compareAbort?.abort()
+  autoRefresh.dispose()
+  unsubscribeChanges?.()
+  window.removeEventListener('focus', checkLatest)
+  document.removeEventListener('visibilitychange', checkLatest)
+})
 </script>
 
 <template>
@@ -314,10 +400,12 @@ onBeforeUnmount(() => { projectRequest += 1; batchRequest += 1; experimentReques
 
   <el-card shadow="never" class="comparison-card">
     <template #header><h2>比较结果</h2></template>
+    <p class="hint">首次点击“开始比较”后自动同步：同源标签页保存相关数据或切回本页时检查最新结果。也可点击“重新比较”。</p>
+    <p v-if="syncStatus" class="hint" role="status" aria-label="比较同步状态" aria-live="polite">{{ syncStatus }}</p>
     <div v-loading="compareLoading" class="result-content">
       <el-alert v-if="compareError" :title="compareError" type="error" :closable="false" show-icon />
-      <el-empty v-else-if="!comparisonResult" description="选择至少两个实验后开始比较。" />
-      <template v-else>
+      <el-empty v-if="!comparisonResult && !compareError" description="选择至少两个实验后开始比较。" />
+      <template v-if="comparisonResult">
         <p v-if="baselineExperiment" class="hint baseline-summary">相对基准：{{ baselineExperiment.experiment_no }}。表格保留原始指标，并显示绝对差值和状态；图表仍展示原始数值。</p>
         <el-alert v-if="baselineExperiment && isCrossProject" title="系统指标的跨项目差值仅作数值对照，请确认评测条件一致；自定义指标只在所属项目内计算差值。" type="info" :closable="false" show-icon />
         <ul class="best-summary" aria-label="最佳指标摘要">
