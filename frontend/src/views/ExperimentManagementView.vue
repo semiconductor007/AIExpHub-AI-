@@ -17,6 +17,7 @@ import { getApiErrorMessage, isApiErrorDetail } from '../api/errors'
 import { formatDateTime } from '../utils/datetime'
 import ExperimentImport from '../components/ExperimentImport.vue'
 import ResultJsonMapper from '../components/ResultJsonMapper.vue'
+import { copyExperimentDraft } from '../utils/experiment-copy'
 
 const route = useRoute()
 const router = useRouter()
@@ -229,6 +230,7 @@ async function initializeContext(): Promise<void> {
 
 const experimentDialogVisible = ref(false)
 const experimentEditingId = ref<number | null>(null)
+const copyingFrom = ref('')
 const experimentBatchId = ref<number | null>(null)
 const experimentFormRef = ref<FormInstance>()
 const experimentForm = reactive({ experiment_no: '', model_name: '', parameters: '{}', notes: '' })
@@ -260,6 +262,7 @@ const experimentRules: FormRules<typeof experimentForm> = {
 
 async function openExperimentDialog(experiment?: Experiment): Promise<void> {
   if (busy.value || batchId.value === null) return
+  copyingFrom.value = ''
   experimentEditingId.value = experiment?.id ?? null
   experimentBatchId.value = batchId.value
   experimentForm.experiment_no = experiment?.experiment_no ?? ''
@@ -271,6 +274,14 @@ async function openExperimentDialog(experiment?: Experiment): Promise<void> {
   experimentFormRef.value?.clearValidate()
 }
 
+async function openCopyDialog(experiment: Experiment): Promise<void> {
+  await openExperimentDialog()
+  if (!experimentDialogVisible.value || busy.value) return
+  copyingFrom.value = experiment.experiment_no
+  Object.assign(experimentForm, copyExperimentDraft(experiment))
+  experimentFormRef.value?.clearValidate()
+}
+
 async function submitExperiment(): Promise<void> {
   if (busy.value || !experimentFormRef.value || experimentBatchId.value === null) return
   experimentSubmitting.value = true
@@ -278,6 +289,10 @@ async function submitExperiment(): Promise<void> {
   const editingId = experimentEditingId.value
   try {
     if (!await experimentFormRef.value.validate().catch(() => false)) return
+    if (!batches.value.some(batch => batch.id === targetBatch && batch.project_id === projectId.value)) {
+      ElMessage.error('请选择当前项目内的有效目标批次')
+      return
+    }
     const payload = {
       experiment_no: experimentForm.experiment_no.trim().toUpperCase(),
       model_name: experimentForm.model_name.trim(),
@@ -288,6 +303,10 @@ async function submitExperiment(): Promise<void> {
       ? await createExperiment(targetBatch, payload) : await updateExperiment(editingId, payload)
     experimentDialogVisible.value = false
     ElMessage.success('实验已保存')
+    if (copyingFrom.value && batchId.value !== targetBatch) {
+      batchId.value = targetBatch
+      clearExperiments()
+    }
     if (batchId.value === targetBatch) {
       await loadExperiments()
       if (batchId.value === targetBatch && editingId === null) {
@@ -487,10 +506,11 @@ onBeforeUnmount(() => { contextRequest += 1; batchRequest += 1; experimentReques
       </el-table-column>
       <el-table-column label="备注" min-width="120" show-overflow-tooltip><template #default="{ row }">{{ row.notes ?? '-' }}</template></el-table-column>
       <el-table-column label="创建时间" width="180"><template #default="{ row }">{{ formatDateTime(row.created_at) }}</template></el-table-column>
-      <el-table-column label="操作" width="210">
+      <el-table-column label="操作" width="290">
         <template #default="{ row }">
           <el-button link type="primary" :disabled="busy || experimentsLoading" @click="selectExperiment(row)">查看结果</el-button>
           <el-button link type="primary" :disabled="busy || experimentsLoading" @click="openExperimentDialog(row)">编辑</el-button>
+          <el-button link type="primary" :disabled="busy || experimentsLoading" @click="openCopyDialog(row)">复制配置</el-button>
           <el-button link type="danger" :disabled="busy || experimentsLoading" @click="removeExperiment(row)">删除</el-button>
         </template>
       </el-table-column>
@@ -519,9 +539,17 @@ onBeforeUnmount(() => { contextRequest += 1; batchRequest += 1; experimentReques
     </div>
   </el-card>
 
-  <el-dialog v-model="experimentDialogVisible" :title="experimentEditingId === null ? '新建实验' : '编辑实验'" width="min(600px, 92vw)"
+  <el-dialog v-model="experimentDialogVisible" :title="copyingFrom ? '复制实验配置' : experimentEditingId === null ? '新建实验' : '编辑实验'" width="min(600px, 92vw)"
              :close-on-click-modal="!experimentSubmitting" :close-on-press-escape="!experimentSubmitting" :show-close="!experimentSubmitting">
     <el-form ref="experimentFormRef" :model="experimentForm" :rules="experimentRules" label-position="top" :disabled="experimentSubmitting" @submit.prevent="submitExperiment">
+      <template v-if="copyingFrom">
+        <el-alert :title="`来自 ${copyingFrom}，请填写新编号。实验结果不会复制。`" type="info" :closable="false" />
+        <el-form-item label="目标批次（当前项目）">
+          <el-select v-model="experimentBatchId" aria-label="复制目标批次">
+            <el-option v-for="batch in batches" :key="batch.id" :label="batch.name" :value="batch.id" />
+          </el-select>
+        </el-form-item>
+      </template>
       <el-form-item label="实验编号" prop="experiment_no"><el-input v-model="experimentForm.experiment_no" aria-label="实验编号" /></el-form-item>
       <el-form-item label="模型名称" prop="model_name"><el-input v-model="experimentForm.model_name" aria-label="模型名称" /></el-form-item>
       <el-form-item label="实验参数（JSON 对象）" prop="parameters"><el-input v-model="experimentForm.parameters" type="textarea" :rows="6" aria-label="实验参数" /></el-form-item>
