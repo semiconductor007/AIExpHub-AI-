@@ -21,6 +21,7 @@ dist/
 .env.*
 !.env.example
 *.log
+.runtime/
 
 # SQLite 本地数据库及附属文件
 *.db

@@ -69,6 +69,10 @@ Result 通过 `/experiments/{experiment_id}/result` 访问：POST 仅首次创�
 
 `POST /experiments/compare` 接收至少两个不同的严格正整数 ID，允许跨项目、批次和模型，按输入顺序返回实验。缺失结果或指标保持 null；accuracy / precision / recall / f1 取最大，loss 取最小，并列最优全部返回，全空指标没有最佳实验。每次只读查询最新 Result，不保存或缓存比较结果；请求非法返回 422，实验不存在返回包含缺失 ID 的 404。详细结构见 [当前 API](docs/api.md)。
 
+## Windows 一键启动
+
+首次按下文准备 Python / Node 和依赖后，双击根目录 `启动平台.cmd`，等待检查与服务就绪，浏览器将打开 `http://127.0.0.1:5173/`；用完双击 `停止平台.cmd`。支持重复启动复用、明确的端口冲突提示、启动失败清理和手动诊断；启动成功后检查结束，不新增运行期间轮询。环境准备、日志和故障处理见 [一键启动说明](docs/local-startup.md)。原有手动启动方式保留如下。
+
 ## 后端安装与启动
 
 后端要求 Python 3.12。首次准备环境时，确认下面的 `python --version` 为 3.12；若默认 Python 版本不同，请用实际 Python 3.12 的可执行文件路径执行创建虚拟环境命令。依赖安装在后端独立虚拟环境中。
@@ -194,6 +198,11 @@ build 执行 `vue-tsc -b && vite build`，先类型检查，再生成 `frontend/
 
 ```text
 AIExpHub/
+├── 启动平台.cmd             # Windows 一键检查、启动与打开首页
+├── 停止平台.cmd             # 停止本工具管理且核验通过的服务
+├── scripts/
+│   ├── manage-local.ps1     # 启动、停止、手动诊断
+│   └── tests/run-tests.ps1  # 独立 PowerShell 脚本验收
 ├── backend/
 │   ├── app/
 │   │   ├── __init__.py
