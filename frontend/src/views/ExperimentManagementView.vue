@@ -7,7 +7,7 @@ import { getProjects } from '../api/projects'
 import type { Project } from '../api/projects'
 import { getProjectBatches } from '../api/batches'
 import type { ExperimentBatch } from '../api/batches'
-import { createExperiment, deleteExperiment, getBatchExperiments, updateExperiment } from '../api/experiments'
+import { createExperiment, deleteExperiment, getProjectExperiments, updateExperiment } from '../api/experiments'
 import type { Experiment } from '../api/experiments'
 import { createExperimentResult, getExperimentResult, updateExperimentResult } from '../api/results'
 import type { BuiltinMetric, ExperimentResult, ResultMetric, ResultPayload } from '../api/results'
@@ -15,6 +15,9 @@ import { getProjectMetrics, metricLabel } from '../api/metrics'
 import type { MetricDefinition } from '../api/metrics'
 import { getApiErrorMessage, isApiErrorDetail } from '../api/errors'
 import { formatDateTime } from '../utils/datetime'
+import BatchManager from '../components/BatchManager.vue'
+import ProjectMetrics from '../components/ProjectMetrics.vue'
+import { keepExistingSelection, setVisibleSelection } from '../utils/workspace-selection'
 import ExperimentImport from '../components/ExperimentImport.vue'
 import ResultJsonMapper from '../components/ResultJsonMapper.vue'
 import { comparisonQuery } from '../utils/comparison-selection'
@@ -25,11 +28,28 @@ const router = useRouter()
 const projects = ref<Project[]>([])
 const batches = ref<ExperimentBatch[]>([])
 const experiments = ref<Experiment[]>([])
-const checkedExperiments = ref<Experiment[]>([])
+const checkedIds = ref<number[]>([])
+const visibleExperiments = computed(() => batchId.value === null ? experiments.value : experiments.value.filter(item => item.batch_id === batchId.value))
+const allVisibleChecked = computed(() => visibleExperiments.value.length > 0 && visibleExperiments.value.every(item => checkedIds.value.includes(item.id)))
+const someVisibleChecked = computed(() => visibleExperiments.value.some(item => checkedIds.value.includes(item.id)) && !allVisibleChecked.value)
+function toggleVisible(checked: boolean): void { checkedIds.value = setVisibleSelection(checkedIds.value, visibleExperiments.value.map(item => item.id), checked) }
+function toggleExperiment(id: number, checked: boolean): void { checkedIds.value = setVisibleSelection(checkedIds.value, [id], checked) }
 function compareChecked(): void {
-  if (checkedExperiments.value.length < 2) return
-  void router.push({ path: '/compare', query: comparisonQuery(checkedExperiments.value.map(item => item.id)) })
+  if (checkedIds.value.length < 2) return
+  void router.push({ path: '/compare', query: comparisonQuery(checkedIds.value) })
 }
+const detailOpen = ref(false)
+const batchManagerOpen = ref(false)
+const metricManagerOpen = ref(false)
+const settingsBusy = ref(false)
+const importTargetOpen = ref(false)
+const importBatchId = ref<number | null>(null)
+const importBatchName = computed(() => batches.value.find(item => item.id === importBatchId.value)?.name)
+const selectedProject = computed(() => projects.value.find(item => item.id === projectId.value))
+const contextError = ref('')
+let loadedProjectId: number | null = null
+function batchName(id: number): string { return batches.value.find(item => item.id === id)?.name ?? `批次 #${id}` }
+function openImport(): void { importBatchId.value = batchId.value; importTargetOpen.value = true }
 const projectId = ref<number | null>(null)
 const batchId = ref<number | null>(null)
 const selectedExperiment = ref<Experiment | null>(null)
@@ -45,7 +65,7 @@ const resultSubmitting = ref(false)
 const experimentDeleting = ref(false)
 const importBusy = ref(false)
 const resultFileLoading = ref(false)
-const busy = computed(() => experimentSubmitting.value || resultSubmitting.value || experimentDeleting.value || importBusy.value || resultFileLoading.value)
+const busy = computed(() => experimentSubmitting.value || resultSubmitting.value || experimentDeleting.value || importBusy.value || resultFileLoading.value || settingsBusy.value)
 const projectsError = ref('')
 const batchesError = ref('')
 const metricDefinitions = ref<MetricDefinition[]>([])
@@ -69,13 +89,13 @@ function clearResult(): void {
 
 function clearExperimentSelection(): void {
   selectedExperiment.value = null
+  detailOpen.value = false
   clearResult()
 }
 
 function clearExperiments(): void {
   experimentRequest += 1
   experiments.value = []
-  checkedExperiments.value = []
   experimentsError.value = ''
   experimentsLoading.value = false
   clearExperimentSelection()
@@ -128,22 +148,23 @@ async function loadBatches(): Promise<void> {
 }
 
 async function loadExperiments(): Promise<void> {
-  const target = batchId.value
+  const target = projectId.value
   if (target === null) return
   const request = ++experimentRequest
   experimentsLoading.value = true
   experimentsError.value = ''
   try {
-    const response = await getBatchExperiments(target)
-    if (request !== experimentRequest || batchId.value !== target) return
+    const response = await getProjectExperiments(target)
+    if (request !== experimentRequest || projectId.value !== target) return
     experiments.value = response
+    checkedIds.value = keepExistingSelection(checkedIds.value, response.map(item => item.id))
     if (selectedExperiment.value) {
       const current = response.find(experiment => experiment.id === selectedExperiment.value?.id)
       if (current) selectedExperiment.value = current
       else clearExperimentSelection()
     }
   } catch (error: unknown) {
-    if (request === experimentRequest && batchId.value === target) {
+    if (request === experimentRequest && projectId.value === target) {
       experimentsError.value = getApiErrorMessage(error, '实验列表加载失败，请重试。')
       ElMessage.error(experimentsError.value)
     }
@@ -179,20 +200,24 @@ async function loadResult(): Promise<void> {
 }
 
 function selectProject(): void {
-  contextRequest += 1
-  clearBatches()
-  void Promise.all([loadBatches(), loadMetricDefinitions()])
+  void router.push({ path: '/experiments', query: projectId.value === null ? {} : { projectId: projectId.value } })
 }
 
 function selectBatch(): void {
-  contextRequest += 1
-  clearExperiments()
-  void loadExperiments()
+  void router.replace({ path: '/experiments', query: { projectId: String(projectId.value), ...(batchId.value === null ? {} : { batchId: String(batchId.value) }) } })
+}
+
+async function refreshBatches(): Promise<void> {
+  await loadBatches()
+  if (batchesError.value) return
+  if (batchId.value !== null && !batches.value.some(item => item.id === batchId.value)) { batchId.value = null; selectBatch() }
+  await loadExperiments()
 }
 
 function selectExperiment(experiment: Experiment): void {
   if (busy.value) return
   selectedExperiment.value = experiment
+  detailOpen.value = true
   void loadResult()
 }
 
@@ -202,37 +227,36 @@ function queryId(value: unknown): number | null {
   return Number.isSafeInteger(parsed) ? parsed : null
 }
 
-async function initializeContext(): Promise<void> {
+async function initializeContext(force = false): Promise<void> {
+  const requestedProject = queryId(route.query.projectId)
+  const requestedBatch = queryId(route.query.batchId)
+  if (!force && requestedProject !== null && requestedProject === loadedProjectId) {
+    batchId.value = requestedBatch !== null && batches.value.some(item => item.id === requestedBatch) ? requestedBatch : null
+    contextError.value = route.query.batchId && batchId.value === null ? '指定批次不存在或不属于当前项目，已显示全部实验。' : ''
+    return
+  }
   const request = ++contextRequest
-  projectId.value = null
-  clearBatches()
+  if (requestedProject !== loadedProjectId) { checkedIds.value = []; clearBatches() }
   projectsLoading.value = true
-  projectsError.value = ''
+  projectsError.value = ''; contextError.value = ''
   try {
     const response = await getProjects()
     if (request !== contextRequest) return
     projects.value = response
-    const requestedProject = queryId(route.query.projectId)
-    const requestedBatch = queryId(route.query.batchId)
-    if (requestedProject === null || requestedBatch === null || !response.some(project => project.id === requestedProject)) return
-    projectId.value = requestedProject
-    await Promise.all([loadBatches(), loadMetricDefinitions()])
-    if (request !== contextRequest) return
-    if (!batches.value.some(batch => batch.id === requestedBatch && batch.project_id === requestedProject)) {
-      projectId.value = null
-      clearBatches()
+    if (requestedProject === null || !response.some(item => item.id === requestedProject)) {
+      projectId.value = null; loadedProjectId = null; clearBatches(); checkedIds.value = []
+      if (route.query.projectId) contextError.value = '指定项目不存在，请重新选择项目。'
       return
     }
-    batchId.value = requestedBatch
-    await loadExperiments()
-  } catch (error: unknown) {
-    if (request === contextRequest) {
-      projectsError.value = getApiErrorMessage(error, '项目列表加载失败，请重试。')
-      ElMessage.error(projectsError.value)
-    }
-  } finally {
-    if (request === contextRequest) projectsLoading.value = false
-  }
+    projectId.value = requestedProject
+    await Promise.all([loadBatches(), loadMetricDefinitions(), loadExperiments()])
+    if (request !== contextRequest) return
+    batchId.value = requestedBatch !== null && batches.value.some(item => item.id === requestedBatch) ? requestedBatch : null
+    if (route.query.batchId && batchId.value === null) contextError.value = '指定批次不存在或不属于当前项目，已显示全部实验。'
+    loadedProjectId = requestedProject
+  } catch (error) {
+    if (request === contextRequest) projectsError.value = getApiErrorMessage(error, '项目列表加载失败，请重试。')
+  } finally { if (request === contextRequest) projectsLoading.value = false }
 }
 
 const experimentDialogVisible = ref(false)
@@ -268,10 +292,10 @@ const experimentRules: FormRules<typeof experimentForm> = {
 }
 
 async function openExperimentDialog(experiment?: Experiment): Promise<void> {
-  if (busy.value || batchId.value === null) return
+  if (busy.value || projectId.value === null || batches.value.length === 0) return
   copyingFrom.value = ''
   experimentEditingId.value = experiment?.id ?? null
-  experimentBatchId.value = batchId.value
+  experimentBatchId.value = experiment?.batch_id ?? batchId.value
   experimentForm.experiment_no = experiment?.experiment_no ?? ''
   experimentForm.model_name = experiment?.model_name ?? ''
   experimentForm.parameters = experiment ? JSON.stringify(experiment.parameters, null, 2) : '{}'
@@ -290,7 +314,8 @@ async function openCopyDialog(experiment: Experiment): Promise<void> {
 }
 
 async function submitExperiment(): Promise<void> {
-  if (busy.value || !experimentFormRef.value || experimentBatchId.value === null) return
+  if (busy.value || !experimentFormRef.value) return
+  if (experimentBatchId.value === null) { ElMessage.error('请选择实验所属批次'); return }
   experimentSubmitting.value = true
   const targetBatch = experimentBatchId.value
   const editingId = experimentEditingId.value
@@ -310,16 +335,12 @@ async function submitExperiment(): Promise<void> {
       ? await createExperiment(targetBatch, payload) : await updateExperiment(editingId, payload)
     experimentDialogVisible.value = false
     ElMessage.success('实验已保存')
-    if (copyingFrom.value && batchId.value !== targetBatch) {
-      batchId.value = targetBatch
-      clearExperiments()
-    }
-    if (batchId.value === targetBatch) {
-      await loadExperiments()
-      if (batchId.value === targetBatch && editingId === null) {
-        selectedExperiment.value = saved
-        await loadResult()
-      }
+    await loadExperiments()
+    if (selectedExperiment.value?.id === saved.id) selectedExperiment.value = saved
+    if (editingId === null) {
+      selectedExperiment.value = saved
+      detailOpen.value = true
+      await loadResult()
     }
   } catch (error: unknown) { ElMessage.error(getApiErrorMessage(error)) }
   finally { experimentSubmitting.value = false }
@@ -335,7 +356,8 @@ async function removeExperiment(experiment: Experiment): Promise<void> {
     await deleteExperiment(experiment.id)
     if (selectedExperiment.value?.id === experiment.id) clearExperimentSelection()
     ElMessage.success('实验已删除')
-    if (batchId.value === experiment.batch_id) await loadExperiments()
+    checkedIds.value = checkedIds.value.filter(id => id !== experiment.id)
+    await loadExperiments()
   } catch (error: unknown) {
     if (error !== 'cancel' && error !== 'close') ElMessage.error(getApiErrorMessage(error))
   } finally { experimentDeleting.value = false }
@@ -452,14 +474,15 @@ onBeforeUnmount(() => { contextRequest += 1; batchRequest += 1; experimentReques
 
 <template>
   <section class="page-heading">
-    <h1>实验管理</h1>
-    <p>选择项目与批次，管理单次实验、实验参数和当前有效结果。</p>
+    <h1>项目工作区</h1>
+    <p v-if="selectedProject">{{ selectedProject.name }}</p>
   </section>
 
   <el-card shadow="never" class="management-card">
     <template #header>
-      <div class="card-header"><h2>实验上下文</h2>
-        <el-button :loading="projectsLoading" :disabled="busy || batchesLoading || experimentsLoading" @click="initializeContext">刷新项目</el-button>
+      <div class="card-header"><h2>当前项目</h2>
+        <el-button :loading="projectsLoading" :disabled="busy || batchesLoading || experimentsLoading" @click="initializeContext(true)">刷新工作区</el-button>
+        <div class="card-actions"><el-button :disabled="!projectId || busy || projectsLoading" @click="batchManagerOpen = true">管理批次</el-button><el-button :disabled="!projectId || busy || projectsLoading" @click="metricManagerOpen = true">管理指标</el-button></div>
       </div>
     </template>
     <el-alert v-if="projectsError" :title="projectsError" type="error" :closable="false" show-icon />
@@ -470,45 +493,49 @@ onBeforeUnmount(() => { contextRequest += 1; batchRequest += 1; experimentReques
           <el-option v-for="project in projects" :key="project.id" :label="project.name" :value="project.id" />
         </el-select>
       </div>
-      <div><label for="experiment-batch">实验批次</label>
-        <el-select id="experiment-batch" v-model="batchId" aria-label="实验批次" placeholder="请选择实验批次"
+      <div><label for="experiment-batch">批次筛选</label>
+        <el-select id="experiment-batch" v-model="batchId" aria-label="实验批次" clearable :value-on-clear="null" placeholder="全部批次"
                    :loading="batchesLoading" :disabled="busy || !projectId || projectsLoading || batchesLoading" @change="selectBatch">
           <el-option v-for="batch in batches" :key="batch.id" :label="batch.name" :value="batch.id" />
         </el-select>
       </div>
     </div>
+    <el-alert v-if="contextError" :title="contextError" type="warning" :closable="false" show-icon />
     <el-alert v-if="batchesError" :title="batchesError" type="error" :closable="false" show-icon />
     <el-alert v-if="metricsError" :title="metricsError" type="error" :closable="false" show-icon />
     <el-empty v-if="!projectsLoading && !projectsError && projects.length === 0" description="暂无实验项目，请先前往项目管理创建项目。">
       <el-button @click="router.push('/projects')">前往项目管理</el-button>
     </el-empty>
-    <p v-else-if="!projectId" class="hint">请先选择实验项目，再选择所属实验批次。</p>
-    <el-empty v-else-if="!batchesLoading && !batchesError && batches.length === 0" description="当前项目暂无实验批次，请先前往项目管理创建批次。">
-      <el-button @click="router.push('/projects')">前往项目管理</el-button>
+    <p v-else-if="!projectId" class="hint">请选择实验项目。</p>
+    <el-empty v-else-if="!batchesLoading && !batchesError && batches.length === 0" description="当前项目暂无实验批次。">
+      <el-button @click="batchManagerOpen = true">新建批次</el-button>
     </el-empty>
   </el-card>
 
   <el-card shadow="never" class="management-card">
     <template #header>
       <div class="card-header">
-        <h2>{{ selectedBatch ? `${selectedBatch.name} / 当前批次实验` : '当前批次实验' }}</h2>
+        <h2>{{ selectedBatch ? selectedBatch.name : '全部批次' }} · 实验（{{ visibleExperiments.length }}）</h2>
         <div class="card-actions">
-          <ExperimentImport :project-id="projectId" :batch-id="batchId" :batch-name="selectedBatch?.name" :disabled="busy || experimentsLoading"
-                            @busy="importBusy = $event" @imported="loadExperiments" />
-          <el-button :disabled="busy || checkedExperiments.length < 2" @click="compareChecked">比较所选实验（{{ checkedExperiments.length }}）</el-button>
-          <el-button :loading="experimentsLoading" :disabled="!batchId || busy" @click="loadExperiments">刷新实验</el-button>
-          <el-button type="primary" :disabled="!batchId || busy || experimentsLoading" @click="openExperimentDialog()">新建实验</el-button>
+          <el-button :disabled="!projectId || !batches.length || busy || experimentsLoading" @click="openImport">批量导入 JSON</el-button>
+          <el-button :disabled="busy || projectsLoading || experimentsLoading || checkedIds.length < 2" @click="compareChecked">比较所选实验（{{ checkedIds.length }}）</el-button>
+          <el-button :loading="experimentsLoading" :disabled="!projectId || busy" @click="loadExperiments">刷新实验</el-button>
+          <el-button type="primary" :disabled="!projectId || !batches.length || busy || projectsLoading || experimentsLoading" @click="openExperimentDialog()">新建实验</el-button>
         </div>
       </div>
     </template>
-    <el-empty v-if="!batchId" description="请选择一个实验批次查看实验记录" />
+    <el-empty v-if="!projectId" description="请选择一个实验项目查看实验记录" />
     <el-alert v-else-if="experimentsError" :title="experimentsError" type="error" :closable="false" show-icon />
-    <el-empty v-else-if="!experimentsLoading && experiments.length === 0" description="当前批次暂无实验记录">
-      <el-button type="primary" :disabled="busy" @click="openExperimentDialog()">新建实验</el-button>
+    <el-empty v-else-if="!experimentsLoading && visibleExperiments.length === 0" description="暂无实验记录">
+      <el-button type="primary" :disabled="busy || !batches.length || projectsLoading" @click="openExperimentDialog()">新建实验</el-button>
     </el-empty>
-    <el-table v-else v-loading="experimentsLoading" :data="experiments" row-key="id" aria-label="实验记录列表" @selection-change="checkedExperiments = $event">
-      <el-table-column type="selection" width="48" :selectable="() => !busy" />
+    <el-table v-else v-loading="experimentsLoading" :data="visibleExperiments" row-key="id" aria-label="实验记录列表">
+      <el-table-column width="48">
+        <template #header><el-checkbox :model-value="allVisibleChecked" :indeterminate="someVisibleChecked" :disabled="busy || experimentsLoading" aria-label="选择当前列表全部实验" @change="toggleVisible(Boolean($event))" /></template>
+        <template #default="{ row }"><el-checkbox :model-value="checkedIds.includes(row.id)" :disabled="busy || experimentsLoading" :aria-label="`选择实验 ${row.experiment_no}`" @change="toggleExperiment(row.id, Boolean($event))" /></template>
+      </el-table-column>
       <el-table-column prop="experiment_no" label="实验编号" min-width="140" show-overflow-tooltip />
+      <el-table-column label="批次" min-width="160" show-overflow-tooltip><template #default="{ row }">{{ batchName(row.batch_id) }}</template></el-table-column>
       <el-table-column prop="model_name" label="模型名称" min-width="150" show-overflow-tooltip />
       <el-table-column label="参数" min-width="200" show-overflow-tooltip>
         <template #default="{ row }">{{ JSON.stringify(row.parameters) }}</template>
@@ -517,7 +544,7 @@ onBeforeUnmount(() => { contextRequest += 1; batchRequest += 1; experimentReques
       <el-table-column label="创建时间" width="180"><template #default="{ row }">{{ formatDateTime(row.created_at) }}</template></el-table-column>
       <el-table-column label="操作" width="290">
         <template #default="{ row }">
-          <el-button link type="primary" :disabled="busy || experimentsLoading" @click="selectExperiment(row)">查看结果</el-button>
+          <el-button link type="primary" :disabled="busy || experimentsLoading" @click="selectExperiment(row)">查看详情</el-button>
           <el-button link type="primary" :disabled="busy || experimentsLoading" @click="openExperimentDialog(row)">编辑</el-button>
           <el-button link type="primary" :disabled="busy || experimentsLoading" @click="openCopyDialog(row)">复制配置</el-button>
           <el-button link type="danger" :disabled="busy || experimentsLoading" @click="removeExperiment(row)">删除</el-button>
@@ -526,14 +553,24 @@ onBeforeUnmount(() => { contextRequest += 1; batchRequest += 1; experimentReques
     </el-table>
   </el-card>
 
-  <el-card shadow="never" class="management-card">
-    <template #header>
-      <div class="card-header"><h2>{{ selectedExperiment ? `当前实验结果：${selectedExperiment.experiment_no}` : '当前实验结果' }}</h2>
-        <el-button :loading="resultLoading" :disabled="!selectedExperiment || busy" @click="loadResult">刷新结果</el-button>
+  <el-drawer v-model="detailOpen" title="实验详情" size="min(760px, 96vw)" :close-on-click-modal="!busy" :close-on-press-escape="!busy" :show-close="!busy">
+    <template v-if="selectedExperiment">
+      <h2 class="detail-title">{{ selectedExperiment.experiment_no }}</h2>
+      <el-descriptions :column="1" border>
+        <el-descriptions-item label="模型">{{ selectedExperiment.model_name }}</el-descriptions-item>
+        <el-descriptions-item label="批次">{{ batchName(selectedExperiment.batch_id) }}</el-descriptions-item>
+        <el-descriptions-item label="创建时间">{{ formatDateTime(selectedExperiment.created_at) }}</el-descriptions-item>
+        <el-descriptions-item label="备注">{{ selectedExperiment.notes ?? '-' }}</el-descriptions-item>
+      </el-descriptions>
+      <h3>实验参数</h3><pre class="parameter-details">{{ JSON.stringify(selectedExperiment.parameters, null, 2) }}</pre>
+      <div class="card-actions detail-actions">
+        <el-button :disabled="busy" @click="openExperimentDialog(selectedExperiment)">编辑配置</el-button>
+        <el-button :disabled="busy" @click="openCopyDialog(selectedExperiment)">复制配置</el-button>
+        <el-button :loading="resultLoading" :disabled="busy" @click="loadResult">刷新结果</el-button>
       </div>
+      <h3>当前实验结果</h3>
     </template>
-    <el-empty v-if="!selectedExperiment" description="请选择一个实验查看当前结果" />
-    <div v-else v-loading="resultLoading" class="result-content">
+    <div v-if="selectedExperiment" v-loading="resultLoading" class="result-content">
       <el-alert v-if="resultError" :title="resultError" type="error" :closable="false" show-icon />
       <el-empty v-else-if="resultMissing" description="该实验尚未录入结果">
         <el-button type="primary" :disabled="busy || resultLoading || metricsLoading" @click="openResultDialog">录入结果</el-button>
@@ -546,19 +583,30 @@ onBeforeUnmount(() => { contextRequest += 1; batchRequest += 1; experimentReques
         <el-button class="edit-result" type="primary" :disabled="busy || resultLoading || metricsLoading" @click="openResultDialog">编辑结果</el-button>
       </template>
     </div>
-  </el-card>
+  </el-drawer>
+
+  <el-dialog v-model="batchManagerOpen" title="管理批次" width="min(900px, 94vw)" :close-on-click-modal="!settingsBusy" :close-on-press-escape="!settingsBusy" :show-close="!settingsBusy">
+    <BatchManager v-if="batchManagerOpen && projectId" :project-id="projectId" :batches="batches" :loading="batchesLoading" :error="batchesError" @changed="refreshBatches" @refresh="refreshBatches" @busy="settingsBusy = $event" />
+  </el-dialog>
+  <el-dialog v-model="metricManagerOpen" title="管理项目指标" width="min(1100px, 96vw)" :close-on-click-modal="!settingsBusy" :close-on-press-escape="!settingsBusy" :show-close="!settingsBusy" @closed="loadMetricDefinitions">
+    <ProjectMetrics v-if="metricManagerOpen" :project-id="projectId" :project-name="selectedProject?.name" @busy="settingsBusy = $event" />
+  </el-dialog>
+  <el-dialog v-model="importTargetOpen" title="选择导入批次" width="min(520px, 92vw)" :close-on-click-modal="!importBusy" :close-on-press-escape="!importBusy" :show-close="!importBusy">
+    <el-form label-position="top"><el-form-item label="目标批次"><el-select v-model="importBatchId" aria-label="导入目标批次" :disabled="importBusy" placeholder="请选择批次"><el-option v-for="batch in batches" :key="batch.id" :value="batch.id" :label="batch.name" /></el-select></el-form-item></el-form>
+    <ExperimentImport :project-id="projectId" :batch-id="importBatchId" :batch-name="importBatchName" @busy="importBusy = $event" @imported="loadExperiments" />
+  </el-dialog>
 
   <el-dialog v-model="experimentDialogVisible" :title="copyingFrom ? '复制实验配置' : experimentEditingId === null ? '新建实验' : '编辑实验'" width="min(600px, 92vw)"
              :close-on-click-modal="!experimentSubmitting" :close-on-press-escape="!experimentSubmitting" :show-close="!experimentSubmitting">
     <el-form ref="experimentFormRef" :model="experimentForm" :rules="experimentRules" label-position="top" :disabled="experimentSubmitting" @submit.prevent="submitExperiment">
       <template v-if="copyingFrom">
         <el-alert :title="`来自 ${copyingFrom}，请填写新编号。实验结果不会复制。`" type="info" :closable="false" />
-        <el-form-item label="目标批次（当前项目）">
-          <el-select v-model="experimentBatchId" aria-label="复制目标批次">
+      </template>
+      <el-form-item v-if="experimentEditingId === null" label="所属批次（必选）" required>
+          <el-select v-model="experimentBatchId" aria-label="实验所属批次" placeholder="请选择所属批次">
             <el-option v-for="batch in batches" :key="batch.id" :label="batch.name" :value="batch.id" />
           </el-select>
-        </el-form-item>
-      </template>
+      </el-form-item>
       <el-form-item label="实验编号" prop="experiment_no"><el-input v-model="experimentForm.experiment_no" aria-label="实验编号" /></el-form-item>
       <el-form-item label="模型名称" prop="model_name"><el-input v-model="experimentForm.model_name" aria-label="模型名称" /></el-form-item>
       <el-form-item label="实验参数（JSON 对象）" prop="parameters"><el-input v-model="experimentForm.parameters" type="textarea" :rows="6" aria-label="实验参数" /></el-form-item>
@@ -590,6 +638,9 @@ onBeforeUnmount(() => { contextRequest += 1; batchRequest += 1; experimentReques
 </template>
 
 <style scoped>
+.detail-title { overflow-wrap: anywhere; }
+.parameter-details { white-space: pre-wrap; overflow-wrap: anywhere; background: #f5f7fa; padding: 16px; border-radius: 6px; }
+.detail-actions { margin-top: 20px; }
 .hint { color: #6b7280; line-height: 1.7; }
 .result-content { min-height: 120px; }
 .edit-result { margin-top: 20px; }

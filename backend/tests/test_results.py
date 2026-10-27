@@ -150,7 +150,8 @@ def test_swagger_contains_only_current_endpoints(client):
     response = client.get("/openapi.json")
     assert response.status_code == 200
     paths = response.json()["paths"]
-    assert len(paths) == 20 and sum(len(methods) for methods in paths.values()) == 36
+    assert len(paths) == 21 and sum(len(methods) for methods in paths.values()) == 37
+    assert set(paths["/projects/{project_id}/experiments"]) == {"get"}
     assert set(paths["/ai/summaries/status"]) == {"get"}
     for action in ("preview", "check", "generate"):
         assert set(paths[f"/ai/summaries/{action}"]) == {"post"}

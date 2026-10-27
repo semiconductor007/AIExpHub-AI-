@@ -22,6 +22,10 @@ export async function getBatchExperiments(batchId: number): Promise<Experiment[]
   return (await client.get<Experiment[]>(`/batches/${batchId}/experiments`)).data
 }
 
+export async function getProjectExperiments(projectId: number): Promise<Experiment[]> {
+  return (await client.get<Experiment[]>(`/projects/${projectId}/experiments`)).data
+}
+
 export async function getExperiment(experimentId: number): Promise<Experiment> {
   return (await client.get<Experiment>(`/experiments/${experimentId}`)).data
 }

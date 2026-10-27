@@ -8,8 +8,8 @@ const state = ref<'loading' | 'healthy' | 'unavailable'>('loading')
 const health = ref<HealthResponse | null>(null)
 const router = useRouter()
 const entries = [
-  { title: '项目管理', description: '创建实验项目与批次，组织实验工作。', path: '/projects' },
-  { title: '实验管理', description: '维护模型实验、参数和评测结果。', path: '/experiments' },
+  { title: '项目管理', description: '创建和选择实验项目。', path: '/projects' },
+  { title: '项目工作区', description: '按批次组织实验，维护参数和评测结果。', path: '/experiments' },
   { title: '实验比较', description: '跨项目选择实验，对比指标并查看可视化结果。', path: '/compare' },
 ]
 

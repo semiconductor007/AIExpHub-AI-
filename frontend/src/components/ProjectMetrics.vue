@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onBeforeUnmount, reactive, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { createProjectMetric, deleteProjectMetric, getProjectMetrics, updateProjectMetric } from '../api/metrics'
 import type { MetricDefinition, MetricDefinitionPayload } from '../api/metrics'
@@ -8,6 +8,7 @@ import { getImportTemplate } from '../api/imports'
 import { downloadJson } from '../utils/json-files'
 
 const props = defineProps<{ projectId: number | null; projectName?: string }>()
+const emit = defineEmits<{ busy: [value: boolean] }>()
 const metrics = ref<MetricDefinition[]>([])
 const loading = ref(false)
 const saving = ref(false)
@@ -94,6 +95,7 @@ async function remove(metric: MetricDefinition): Promise<void> {
   finally { removing.value = false }
 }
 
+watch(computed(() => saving.value || removing.value || exporting.value), value => emit('busy', value))
 watch(() => props.projectId, () => { if (!saving.value) dialog.value = false; void load() }, { immediate: true })
 onBeforeUnmount(() => { request += 1 })
 </script>

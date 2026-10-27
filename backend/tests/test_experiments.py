@@ -5,6 +5,21 @@ import pytest
 from app.models import Experiment
 
 
+def test_project_experiments_span_batches_and_exclude_other_projects(client, sample_experiment, sample_project, experiment_payload):
+    path = f"/projects/{sample_project['id']}/experiments"
+    second_batch = client.post(f"/projects/{sample_project['id']}/batches", json={"name": "Second"}).json()
+    second = client.post(f"/batches/{second_batch['id']}/experiments", json={**experiment_payload, "experiment_no": "SECOND"}).json()
+    other_project = client.post("/projects", json={"name": "Other"}).json()
+    other_path = f"/projects/{other_project['id']}/experiments"
+    assert client.get(other_path).json() == []
+    other_batch = client.post(f"/projects/{other_project['id']}/batches", json={"name": "Other"}).json()
+    client.post(f"/batches/{other_batch['id']}/experiments", json={**experiment_payload, "experiment_no": "OUTSIDE"})
+    response = client.get(path)
+    assert response.status_code == 200 and response.json() == [sample_experiment, second]
+    assert client.get('/projects/999999/experiments').status_code == 404
+    assert client.get('/projects/999999/experiments').json() == {"detail": "Project not found"}
+
+
 def test_experiment_creation_normalization_scoped_list(client, sample_batch, experiment_payload, db_session):
     path = f"/batches/{sample_batch['id']}/experiments"
     response = client.get(path)

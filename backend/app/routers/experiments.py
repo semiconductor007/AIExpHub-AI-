@@ -9,7 +9,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models import Experiment, ExperimentBatch
+from app.models import Experiment, ExperimentBatch, Project
 from app.schemas import ExperimentCreate, ExperimentRead, ExperimentUpdate
 
 
@@ -79,6 +79,18 @@ def list_batch_experiments(batch_id: int, db: DbSession) -> list[Experiment]:
             .order_by(Experiment.id.asc())
         )
     )
+
+
+@router.get("/projects/{project_id}/experiments", response_model=list[ExperimentRead])
+def list_project_experiments(project_id: int, db: DbSession) -> list[Experiment]:
+    if db.get(Project, project_id) is None:
+        raise HTTPException(status_code=404, detail="Project not found")
+    return list(db.scalars(
+        select(Experiment)
+        .join(ExperimentBatch, Experiment.batch_id == ExperimentBatch.id)
+        .where(ExperimentBatch.project_id == project_id)
+        .order_by(Experiment.id.asc())
+    ))
 
 
 @router.get("/experiments/{experiment_id}", response_model=ExperimentRead)

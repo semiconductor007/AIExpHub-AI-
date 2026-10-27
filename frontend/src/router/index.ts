@@ -10,7 +10,7 @@ const router = createRouter({
   routes: [
     { path: '/', component: HomeView, meta: { title: 'AIExpHub' } },
     { path: '/projects', component: ProjectManagementView, meta: { title: '项目管理' } },
-    { path: '/experiments', component: ExperimentManagementView, meta: { title: '实验管理' } },
+    { path: '/experiments', component: ExperimentManagementView, meta: { title: '项目工作区' } },
     { path: '/compare', component: ExperimentComparisonView, meta: { title: '实验比较' } },
     { path: '/:pathMatch(.*)*', component: NotFoundView, meta: { title: '页面不存在' } },
   ],
