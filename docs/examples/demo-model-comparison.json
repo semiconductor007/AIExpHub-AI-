@@ -1,0 +1,124 @@
+{
+  "format_version": 1,
+  "metric_definitions": [
+    {
+      "key": "latency",
+      "name": "推理延迟",
+      "unit": "ms",
+      "direction": "min",
+      "lower_bound": 0,
+      "upper_bound": null
+    },
+    {
+      "key": "throughput",
+      "name": "推理吞吐量",
+      "unit": "条/秒",
+      "direction": "max",
+      "lower_bound": 0,
+      "upper_bound": null
+    },
+    {
+      "key": "model_size",
+      "name": "模型体积",
+      "unit": "MB",
+      "direction": "min",
+      "lower_bound": 0,
+      "upper_bound": null
+    }
+  ],
+  "experiments": [
+    {
+      "experiment_no": "演示-随机种子验证-04",
+      "model_name": "演示分类模型-A",
+      "parameters": {
+        "learning_rate": 0.0002,
+        "batch_size": 32,
+        "epochs": 10,
+        "seed": 43,
+        "optimizer": "AdamW",
+        "synthetic": true,
+        "data_source": "人工构造的展示数据，非真实训练或评测结果",
+        "evaluation": {
+          "dataset": "演示文本分类数据集（虚构）",
+          "dataset_version": "demo-v1",
+          "split": "test",
+          "method": "展示用分类评测（人工模拟）",
+          "hardware": "演示硬件环境（虚构）"
+        }
+      },
+      "notes": "【演示用·非真实数据】所有参数与指标为人工构造，仅用于平台功能展示，不代表任何真实模型的性能。 与适中学习率实验形成并列质量指标；演示重复记录，不用于声称统计显著。",
+      "result": {
+        "accuracy": 0.88,
+        "precision": 0.89,
+        "recall": 0.87,
+        "f1": 0.88,
+        "loss": 0.39,
+        "latency": 14.5,
+        "throughput": 68.97,
+        "model_size": 120
+      }
+    },
+    {
+      "experiment_no": "演示-轻量模型-05",
+      "model_name": "演示分类模型-轻量版",
+      "parameters": {
+        "learning_rate": 0.0002,
+        "batch_size": 32,
+        "epochs": 10,
+        "seed": 42,
+        "optimizer": "AdamW",
+        "synthetic": true,
+        "data_source": "人工构造的展示数据，非真实训练或评测结果",
+        "evaluation": {
+          "dataset": "演示文本分类数据集（虚构）",
+          "dataset_version": "demo-v1",
+          "split": "test",
+          "method": "展示用分类评测（人工模拟）",
+          "hardware": "演示硬件环境（虚构）"
+        }
+      },
+      "notes": "【演示用·非真实数据】所有参数与指标为人工构造，仅用于平台功能展示，不代表任何真实模型的性能。 展示延迟更低、吞吐更高、模型更小的取舍。",
+      "result": {
+        "accuracy": 0.86,
+        "precision": 0.87,
+        "recall": 0.85,
+        "f1": 0.86,
+        "loss": 0.41,
+        "latency": 8,
+        "throughput": 125,
+        "model_size": 60
+      }
+    },
+    {
+      "experiment_no": "演示-高质量模型-06",
+      "model_name": "演示分类模型-增强版",
+      "parameters": {
+        "learning_rate": 0.0002,
+        "batch_size": 32,
+        "epochs": 10,
+        "seed": 42,
+        "optimizer": "AdamW",
+        "synthetic": true,
+        "data_source": "人工构造的展示数据，非真实训练或评测结果",
+        "evaluation": {
+          "dataset": "演示文本分类数据集（虚构）",
+          "dataset_version": "demo-v1",
+          "split": "test",
+          "method": "展示用分类评测（人工模拟）",
+          "hardware": "演示硬件环境（虚构）"
+        }
+      },
+      "notes": "【演示用·非真实数据】所有参数与指标为人工构造，仅用于平台功能展示，不代表任何真实模型的性能。 展示质量更高但推理更慢、模型更大的取舍。",
+      "result": {
+        "accuracy": 0.91,
+        "precision": 0.92,
+        "recall": 0.9,
+        "f1": 0.91,
+        "loss": 0.29,
+        "latency": 24,
+        "throughput": 41.67,
+        "model_size": 280
+      }
+    }
+  ]
+}
