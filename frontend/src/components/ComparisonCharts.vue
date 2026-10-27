@@ -9,11 +9,13 @@ import type { GridComponentOption, LegendComponentOption, TooltipComponentOption
 import type { TooltipComponentFormatterCallbackParams } from 'echarts'
 import { CanvasRenderer } from 'echarts/renderers'
 import type { ExperimentCompareResponse, MetricName } from '../api/compare'
+import type { ChartExportSpec, ChartExportTarget } from '../utils/chart-export-layout'
 
 use([BarChart, GridComponent, LegendComponent, TooltipComponent, CanvasRenderer])
 
 type ChartOption = ComposeOption<BarSeriesOption | GridComponentOption | LegendComponentOption | TooltipComponentOption>
-const props = defineProps<{ result: ExperimentCompareResponse }>()
+const props = defineProps<{ result: ExperimentCompareResponse; exportDisabled?: boolean }>()
+const emit = defineEmits<{ 'export-chart': [target: ChartExportTarget] }>()
 const comprehensiveMetrics: { key: MetricName; label: string }[] = [
   { key: 'accuracy', label: 'Accuracy' }, { key: 'precision', label: 'Precision' },
   { key: 'recall', label: 'Recall' }, { key: 'f1', label: 'F1' },
@@ -93,6 +95,20 @@ function resizeCharts(): void {
   if (lossContainer.value?.clientWidth && hasLossData.value) lossChart?.resize()
 }
 
+function getExportSpec(target: ChartExportTarget): ChartExportSpec | null {
+  if (target.kind === 'custom') return null
+  const comprehensive = target.kind === 'comprehensive'
+  if (comprehensive ? !hasComprehensiveData.value : !hasLossData.value) return null
+  return {
+    option: option(comprehensive ? comprehensiveMetrics : lossMetric, comprehensive, comprehensive ? comprehensiveChart : lossChart),
+    title: comprehensive ? '综合指标比较' : 'Loss 比较',
+    description: comprehensive ? 'Accuracy / Precision / Recall / F1：越大越好，范围 0–1。绿色“最佳”包含并列结果；缺失值保持为空。' : 'Loss：越小越好。绿色“最佳”包含并列结果；缺失值保持为空。',
+    labels: props.result.experiments.map(item => item.experiment_no), filename: target.kind,
+  }
+}
+
+defineExpose({ getExportSpec })
+
 async function renderCharts(): Promise<void> {
   await nextTick()
   if (!mounted) return
@@ -127,11 +143,11 @@ onBeforeUnmount(() => {
 
 <template>
   <section class="comparison-charts" aria-label="可视化比较">
-    <h3>综合指标比较</h3>
+    <div class="chart-heading"><h3>综合指标比较</h3><el-button size="small" :disabled="exportDisabled || !hasComprehensiveData" aria-label="导出综合指标 PNG" @click="emit('export-chart', { kind: 'comprehensive' })">导出 PNG</el-button></div>
     <p class="chart-hint">Accuracy / Precision / Recall / F1：越大越好，范围 0–1。绿色“最佳”使用后端比较结果。</p>
     <el-empty v-if="!hasComprehensiveData" description="暂无可视化的综合指标数据" />
     <div v-show="hasComprehensiveData" ref="comprehensiveContainer" class="chart comprehensive-chart" role="img" aria-label="综合指标比较柱状图" />
-    <h3>Loss 比较</h3>
+    <div class="chart-heading"><h3>Loss 比较</h3><el-button size="small" :disabled="exportDisabled || !hasLossData" aria-label="导出 Loss PNG" @click="emit('export-chart', { kind: 'loss' })">导出 PNG</el-button></div>
     <p class="chart-hint">Loss 越小越好，独立使用从 0 开始的自适应数值轴；缺失指标保持为空。</p>
     <el-empty v-if="!hasLossData" description="暂无可视化的 Loss 数据" />
     <div v-show="hasLossData" ref="lossContainer" class="chart loss-chart" role="img" aria-label="Loss 比较柱状图" />
@@ -140,6 +156,7 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .comparison-charts { min-width: 0; margin-bottom: 24px; }
+.chart-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 h3 { margin: 20px 0 8px; font-size: 16px; }
 .chart-hint { margin: 0 0 12px; color: #6b7280; font-size: 13px; line-height: 1.7; }
 .chart { width: 100%; min-width: 0; }

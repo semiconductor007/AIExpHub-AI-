@@ -1,14 +1,9 @@
 <script setup lang="ts">
 import type { MetricDelta } from '../api/compare'
 import { formatSignedDelta } from '../utils/metric-delta'
+import { deltaReasonLabels as reasons, deltaStatusLabels as labels } from '../utils/comparison-export'
 
 defineProps<{ value?: MetricDelta; unit?: string }>()
-const labels = { improved: '改善', regressed: '退步', unchanged: '无变化', unavailable: '无法比较' }
-const reasons = {
-  baseline_project_mismatch: '基准不属于该指标项目', experiment_project_mismatch: '实验不属于该指标项目',
-  baseline_result_missing: '基准未录入结果', experiment_result_missing: '实验未录入结果',
-  baseline_metric_missing: '基准缺少该指标', experiment_metric_missing: '实验缺少该指标', overflow: '差值超出有限数值范围',
-}
 </script>
 
 <template>

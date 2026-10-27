@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { isAxiosError } from 'axios'
@@ -20,6 +20,10 @@ import MetricDeltaDisplay from '../components/MetricDeltaDisplay.vue'
 import { affectsComparison, subscribeComparisonChanges } from '../utils/comparison-changes'
 import type { ComparisonChange } from '../utils/comparison-changes'
 import { createComparisonRefresh } from '../utils/comparison-refresh'
+import { buildComparisonCsv, createExportSnapshot, exportFilename, runComparisonExport } from '../utils/comparison-export'
+import { downloadBlob } from '../utils/download'
+import { createChartPng } from '../utils/chart-image'
+import type { ChartExportSpec, ChartExportTarget } from '../utils/chart-export-layout'
 
 interface SelectedExperiment {
   id: number
@@ -51,6 +55,13 @@ const projectsLoading = ref(false)
 const batchesLoading = ref(false)
 const experimentsLoading = ref(false)
 const compareLoading = ref(false)
+const exporting = ref(false)
+const comparisonBusy = computed(() => compareLoading.value || exporting.value)
+const exportError = ref('')
+const builtinCharts = ref<InstanceType<typeof ComparisonCharts> | null>(null)
+const customCharts = ref<InstanceType<typeof CustomMetricChart>[]>([])
+let exportVersion = 0
+let disposed = false
 const projectsError = ref('')
 const batchesError = ref('')
 const experimentsError = ref('')
@@ -64,8 +75,8 @@ let unsubscribeChanges: (() => void) | undefined
 const autoRefresh = createComparisonRefresh({
   enabled: () => comparisonStarted.value && selectedExperiments.value.length >= 2,
   visible: () => document.visibilityState === 'visible',
-  busy: () => compareLoading.value,
-  refresh: () => refreshComparison(true),
+  busy: () => comparisonBusy.value,
+  refresh: async () => { await refreshComparison(true) },
 })
 const syncStatus = computed(() => {
   if (compareLoading.value) return refreshingAutomatically.value ? '正在自动获取最新比较结果…' : '正在获取比较结果…'
@@ -170,6 +181,8 @@ function selectBatch(): void {
 }
 
 function clearComparison(): void {
+  exportVersion += 1
+  exportError.value = ''
   compareRequest += 1
   compareAbort?.abort()
   compareLoading.value = false
@@ -188,7 +201,7 @@ function deltaValue(experimentId: number, key: string, project: number | null = 
 }
 
 function addExperiment(experiment: Experiment): void {
-  if (compareLoading.value || selectedById.value.has(experiment.id) || !selectedProject.value || !selectedBatch.value) return
+  if (comparisonBusy.value || selectedById.value.has(experiment.id) || !selectedProject.value || !selectedBatch.value) return
   if (experiment.batch_id !== selectedBatch.value.id) return
   selectedExperiments.value.push({
     id: experiment.id, experiment_no: experiment.experiment_no, model_name: experiment.model_name,
@@ -199,14 +212,14 @@ function addExperiment(experiment: Experiment): void {
 }
 
 function removeExperiment(id: number): void {
-  if (compareLoading.value) return
+  if (comparisonBusy.value) return
   selectedExperiments.value = selectedExperiments.value.filter(experiment => experiment.id !== id)
   if (baselineId.value === id) baselineId.value = null
   clearComparison()
 }
 
 function clearSelection(): void {
-  if (compareLoading.value) return
+  if (comparisonBusy.value) return
   selectedExperiments.value = []
   baselineId.value = null
   clearComparison()
@@ -214,9 +227,9 @@ function clearSelection(): void {
 
 function startComparison(): void { void refreshComparison(false) }
 
-async function refreshComparison(automatic: boolean): Promise<void> {
-  if (compareLoading.value || selectedExperiments.value.length < 2) return
-  if (automatic && !comparisonStarted.value) return
+async function refreshComparison(automatic: boolean): Promise<boolean> {
+  if (compareLoading.value || selectedExperiments.value.length < 2) return false
+  if (automatic && (!comparisonStarted.value || exporting.value)) return false
   if (!automatic) autoRefresh.clear()
   comparisonStarted.value = true
   const request = ++compareRequest
@@ -229,7 +242,7 @@ async function refreshComparison(automatic: boolean): Promise<void> {
   compareError.value = ''
   try {
     const response = await compareExperiments(ids, baseline, controller.signal)
-    if (request !== compareRequest) return
+    if (request !== compareRequest) return false
     comparisonResult.value = response
     lastUpdated.value = Date.now()
     dataStale.value = autoRefresh.hasPending()
@@ -237,8 +250,9 @@ async function refreshComparison(automatic: boolean): Promise<void> {
       const latest = response.experiments.find(item => item.id === selected.id)
       if (latest) { selected.experiment_no = latest.experiment_no; selected.model_name = latest.model_name }
     }
+    return true
   } catch (error: unknown) {
-    if (request !== compareRequest || controller.signal.aborted) return
+    if (request !== compareRequest || controller.signal.aborted) return false
     const missing = isAxiosError(error) && error.response?.status === 404
     if (missing) {
       comparisonResult.value = null
@@ -252,12 +266,57 @@ async function refreshComparison(automatic: boolean): Promise<void> {
       ? `更新失败，当前显示上次成功数据。${detail} 可点击“重新比较”重试。`
       : detail
     if (!automatic) ElMessage.error(compareError.value)
+    return false
   } finally {
     if (request === compareRequest) {
       compareLoading.value = false
       compareAbort = undefined
       autoRefresh.settle()
     }
+  }
+}
+
+async function exportComparison(target?: ChartExportTarget): Promise<void> {
+  if (comparisonBusy.value || !comparisonResult.value) return
+  const version = ++exportVersion
+  exporting.value = true
+  exportError.value = ''
+  try {
+    const saved = await runComparisonExport({
+      isCurrent: () => !disposed && version === exportVersion,
+      refresh: async () => {
+        const refreshed = await refreshComparison(false)
+        if (!refreshed || !comparisonResult.value || lastUpdated.value === null) {
+          if (!disposed) exportError.value = '导出前刷新未成功，未生成文件。请处理上方提示后重试。'
+          return null
+        }
+        return createExportSnapshot(comparisonResult.value, selectedExperiments.value, lastUpdated.value)
+      },
+      generate: async snapshot => {
+        if (!target) return { blob: new Blob([buildComparisonCsv(snapshot)], { type: 'text/csv;charset=utf-8' }), name: 'comparison', extension: 'csv' as const }
+        await nextTick()
+        let spec: ChartExportSpec | null = null
+        if (target.kind === 'custom') {
+          for (const component of customCharts.value) {
+            spec = component.getExportSpec(target)
+            if (spec) break
+          }
+        } else spec = builtinCharts.value?.getExportSpec(target) ?? null
+        if (!spec) throw new Error('该图表已不存在或没有有效指标，本次未导出图片。')
+        const blob = await createChartPng(spec, snapshot.fetchedAt, snapshot.exportedAt)
+        return { blob, name: spec.filename, extension: 'png' as const }
+      },
+      deliver: (artifact, snapshot) => downloadBlob(artifact.blob, exportFilename(artifact.name, snapshot.exportedAt, artifact.extension)),
+    })
+    if (saved && !disposed) ElMessage.success('已生成导出文件，请查看浏览器下载记录。')
+  } catch (error: unknown) {
+    if (!disposed) {
+      exportError.value = error instanceof Error ? error.message : '导出失败，请重试。'
+      ElMessage.error(exportError.value)
+    }
+  } finally {
+    exporting.value = false
+    autoRefresh.settle()
   }
 }
 
@@ -312,6 +371,7 @@ onMounted(() => {
   document.addEventListener('visibilitychange', checkLatest)
 })
 onBeforeUnmount(() => {
+  disposed = true; exportVersion += 1
   projectRequest += 1; batchRequest += 1; experimentRequest += 1; compareRequest += 1
   compareAbort?.abort()
   autoRefresh.dispose()
@@ -365,7 +425,7 @@ onBeforeUnmount(() => {
         <el-table-column label="参数" min-width="240" show-overflow-tooltip><template #default="{ row }">{{ JSON.stringify(row.parameters) }}</template></el-table-column>
         <el-table-column label="备注" min-width="160" show-overflow-tooltip><template #default="{ row }">{{ row.notes ?? '-' }}</template></el-table-column>
         <el-table-column label="操作" width="120"><template #default="{ row }">
-          <el-button link type="primary" :disabled="compareLoading || experimentsLoading || selectedById.has(row.id)" @click="addExperiment(row)">{{ selectedById.has(row.id) ? '已加入' : '加入比较' }}</el-button>
+          <el-button link type="primary" :disabled="comparisonBusy || experimentsLoading || selectedById.has(row.id)" @click="addExperiment(row)">{{ selectedById.has(row.id) ? '已加入' : '加入比较' }}</el-button>
         </template></el-table-column>
       </el-table>
     </template>
@@ -374,8 +434,8 @@ onBeforeUnmount(() => {
   <el-card shadow="never" class="comparison-card">
     <template #header><div class="card-header"><h2>已选实验（{{ selectedExperiments.length }}）</h2>
       <div class="card-actions">
-        <el-button :disabled="compareLoading || selectedExperiments.length === 0" @click="clearSelection">清空选择</el-button>
-        <el-button type="primary" :loading="compareLoading" :disabled="compareLoading || selectedExperiments.length < 2" @click="startComparison">{{ comparisonResult ? '重新比较' : '开始比较' }}</el-button>
+        <el-button :disabled="comparisonBusy || selectedExperiments.length === 0" @click="clearSelection">清空选择</el-button>
+        <el-button type="primary" :loading="compareLoading" :disabled="comparisonBusy || selectedExperiments.length < 2" @click="startComparison">{{ comparisonResult ? '重新比较' : '开始比较' }}</el-button>
       </div>
     </div></template>
     <el-empty v-if="selectedExperiments.length === 0" description="请从上方候选实验中加入需要比较的实验。" />
@@ -383,7 +443,7 @@ onBeforeUnmount(() => {
       <p v-if="selectedExperiments.length === 1" class="hint">还需至少选择 1 个实验。</p>
       <div class="baseline-selector">
         <label for="compare-baseline">基准实验（可选）</label>
-        <el-select id="compare-baseline" v-model="baselineId" aria-label="基准实验" clearable :value-on-clear="null" :disabled="compareLoading" placeholder="不选择基准，只比较原始指标">
+        <el-select id="compare-baseline" v-model="baselineId" aria-label="基准实验" clearable :value-on-clear="null" :disabled="comparisonBusy" placeholder="不选择基准，只比较原始指标">
           <el-option v-for="experiment in selectedExperiments" :key="experiment.id" :value="experiment.id" :label="`${experiment.experiment_no} / ${experiment.project_name}`" />
         </el-select>
         <p class="hint">选择后点击开始比较。差值为当前实验减基准，按指标方向判断改善或退步；缺失值不补 0。</p>
@@ -393,15 +453,18 @@ onBeforeUnmount(() => {
         <el-table-column prop="model_name" label="模型名称" min-width="140" show-overflow-tooltip />
         <el-table-column prop="project_name" label="项目" min-width="180" show-overflow-tooltip />
         <el-table-column prop="batch_name" label="批次" min-width="180" show-overflow-tooltip />
-        <el-table-column label="操作" width="90"><template #default="{ row }"><el-button link type="danger" :disabled="compareLoading" @click="removeExperiment(row.id)">移除</el-button></template></el-table-column>
+        <el-table-column label="操作" width="90"><template #default="{ row }"><el-button link type="danger" :disabled="comparisonBusy" @click="removeExperiment(row.id)">移除</el-button></template></el-table-column>
       </el-table>
     </template>
   </el-card>
 
   <el-card shadow="never" class="comparison-card">
-    <template #header><h2>比较结果</h2></template>
+    <template #header><div class="card-header"><h2>比较结果</h2><el-button :loading="exporting" :disabled="comparisonBusy || !comparisonResult" @click="exportComparison()">导出比较表 CSV</el-button></div></template>
     <p class="hint">首次点击“开始比较”后自动同步：同源标签页保存相关数据或切回本页时检查最新结果。也可点击“重新比较”。</p>
     <p v-if="syncStatus" class="hint" role="status" aria-label="比较同步状态" aria-live="polite">{{ syncStatus }}</p>
+    <p class="hint">导出前会获取一次最新比较。CSV 包含原始指标、最佳结果及已选择的基准差值；各图可单独导出 PNG。</p>
+    <p v-if="exporting" class="hint" role="status" aria-live="polite">正在刷新并生成导出文件，请稍候…</p>
+    <el-alert v-if="exportError" :title="exportError" type="error" :closable="false" show-icon />
     <div v-loading="compareLoading" class="result-content">
       <el-alert v-if="compareError" :title="compareError" type="error" :closable="false" show-icon />
       <el-empty v-if="!comparisonResult && !compareError" description="选择至少两个实验后开始比较。" />
@@ -438,8 +501,8 @@ onBeforeUnmount(() => {
           </el-table-column>
           <el-table-column label="结果状态" width="110"><template #default="{ row }"><el-tag :type="row.result === null ? 'info' : 'success'" size="small">{{ row.result === null ? '未录入结果' : '已录入结果' }}</el-tag></template></el-table-column>
         </el-table>
-        <ComparisonCharts v-if="showBuiltinCharts" :result="comparisonResult" />
-        <CustomMetricChart v-for="metric in comparisonResult.custom_metrics ?? []" :key="`${metric.definition.project_id}:${metric.definition.key}`" :metric="metric" :experiments="comparisonResult.experiments" />
+        <ComparisonCharts v-if="showBuiltinCharts" ref="builtinCharts" :result="comparisonResult" :export-disabled="comparisonBusy" @export-chart="exportComparison" />
+        <CustomMetricChart v-for="metric in comparisonResult.custom_metrics ?? []" :key="`${metric.definition.project_id}:${metric.definition.key}`" ref="customCharts" :metric="metric" :experiments="comparisonResult.experiments" :export-disabled="comparisonBusy" @export-chart="exportComparison" />
       </template>
     </div>
   </el-card>

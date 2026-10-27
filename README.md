@@ -20,9 +20,11 @@
 
 ## 当前开发阶段
 
-阶段 1 至阶段 6A 已完成，阶段 6B 的核心页面闭环已有验证，实际窗口拖动、学生讲解和视频交付仍待人工完成。2026-10-13 完成另行授权的 JSON 自动填入、项目共享指标、文件与批量导入、基准差值比较与复杂 JSON 映射增量，并于 2026-10-24 完成复制配置、项目级映射模板及比较页轻量自动同步；最新 pytest 为 201 passed、1 warning，前端 42 个测试和 TypeScript / build 通过；临时验证数据已清理，用户原有数据保留。此次功能交付不代表课程最终验收通过。
+阶段 1 至阶段 6A 已完成，阶段 6B 的核心页面闭环已有验证，实际窗口拖动、学生讲解和视频交付仍待人工完成。2026-10-13 完成另行授权的 JSON 自动填入、项目共享指标、文件与批量导入、基准差值比较与复杂 JSON 映射增量，并于 2026-10-24 完成复制配置、项目级映射模板及比较页轻量自动同步；最新 pytest 为 201 passed、1 warning，前端 55 个测试和 TypeScript / build 通过；临时验证数据已清理，用户原有数据保留。此次功能交付不代表课程最终验收通过。
 
 ## 当前功能
+
+2026-10-27 完成比较结果导出：比较表可下载 CSV（含自定义指标、最佳 / 并列结果和可选基准差值），系统指标与自定义指标图可单独下载带标题、单位、时间和完整编号的 PNG。每次导出先获取最新比较，失败不导出旧数据；生成期间固定快照并保留通知待处理。前端 55 个测试与 TypeScript / build 通过，使用与验证见 [比较结果导出](docs/comparison-export.md)。
 
 2026-10-24 完成比较页轻量自动同步：首次比较后，同源标签页保存相关结果 / 配置 / 指标定义，以及切回已打开的比较页时自动获取最新比较。连续通知合并、隐藏页等待恢复可见；选择、基准和图例开关保留。网络失败保留上次数据并标明未更新，已知实验删除则清除旧表图；手动重新比较保留。未增加服务器推送、轮询或后端接口。详见 [使用与验证](docs/comparison-auto-sync.md)。
 
@@ -271,6 +273,10 @@ AIExpHub/
 │   │   │   ├── metric-delta.ts
 │   │   │   ├── comparison-changes.ts
 │   │   │   ├── comparison-refresh.ts
+│   │   │   ├── comparison-export.ts
+│   │   │   ├── chart-export-layout.ts
+│   │   │   ├── chart-image.ts
+│   │   │   ├── download.ts
 │   │   │   ├── experiment-copy.ts
 │   │   │   ├── mapping-templates.ts
 │   │   │   └── json-metrics.ts
@@ -290,6 +296,7 @@ AIExpHub/
 │   │   ├── json-files.test.ts
 │   │   ├── metric-delta.test.ts
 │   │   ├── comparison-sync.test.ts
+│   │   ├── comparison-export.test.ts
 │   │   ├── experiment-copy.test.ts
 │   │   ├── mapping-templates.test.ts
 │   │   └── json-metrics.test.ts
@@ -314,6 +321,7 @@ AIExpHub/
 │   ├── baseline-comparison.md
 │   ├── result-json-mapping.md
 │   ├── comparison-auto-sync.md
+│   ├── comparison-export.md
 │   ├── entry-efficiency.md
 │   ├── improvement-plan.md
 │   ├── project-metrics-proposal.md # 共享指标设计、使用与验证
