@@ -20,7 +20,7 @@
 
 ## 当前开发阶段
 
-阶段 1 至阶段 6A 已完成，阶段 6B 的核心页面闭环已有验证，实际窗口拖动、学生讲解和视频交付仍待人工完成。2026-10-13 完成另行授权的 JSON 自动填入、项目共享指标、文件与批量导入、基准差值比较与复杂 JSON 映射增量，并于 2026-10-24 完成复制配置、项目级映射模板及比较页轻量自动同步；2026-10-27 增加比较导出和可选 AI 总结。最新 pytest 为 249 passed、1 warning，前端 70 个测试和 TypeScript / build 通过；用户原有数据保留，AI 已完成合成数据真实调用验收。此次功能交付不代表课程最终验收通过。
+阶段 1 至阶段 6A 已完成，阶段 6B 的核心页面闭环已有验证，实际窗口拖动、学生讲解和视频交付仍待人工完成。2026-10-13 完成另行授权的 JSON 自动填入、项目共享指标、文件与批量导入、基准差值比较与复杂 JSON 映射增量，并于 2026-10-24 完成复制配置、项目级映射模板及比较页轻量自动同步；2026-10-27 增加比较导出和可选 AI 总结。当前正在进行一次小范围工程化收口：只拆分实验配置与结果录入表单，补齐前端统一测试入口；比较页、后端结构、数据库和业务 API 不在本次范围内。最新 pytest 为 249 passed、1 warning，前端 74 个测试和 TypeScript / build 通过；用户原有数据保留，AI 已完成合成数据真实调用验收。此次功能交付不代表课程最终验收通过。10 月 8 日的 6B 检查记录见 [最终验收报告](docs/final-acceptance-report.md)。
 
 ## 当前功能
 
@@ -58,6 +58,7 @@
 | [整体设计](docs/design.md) | 当前架构、模块、四实体、API、比较算法、图表、异常与测试 |
 | [AI 辅助开发说明](docs/ai-assisted-development.md) | 分阶段指令、提交、真实案例与人工审查边界 |
 | [最终验收清单](docs/final-acceptance-checklist.md) | 6B 环境、流程、业务规则、真实窗口补测和视频交付，未预先全勾 |
+| [最终验收报告](docs/final-acceptance-report.md) | 本次 6B 真实环境、自动检查、页面操作和人工待办；当前停在窗口检查点 |
 | [演示脚本草案](docs/demo-script.md) | 5–8 分钟顺序、稳定示例数据与清理要求；视频待 6B |
 | [需求边界](docs/requirements.md) / [领域模型](docs/domain-model.md) / [校验规则](docs/validation-rules.md) | 保留阶段 2.5 冻结设计和当时范围文字，历史“未实现”不表示当前功能状态 |
 | [后端 API](docs/api.md) | 截至 4A 已确定的路径、请求响应及状态码；前端现状见本文与整体设计 |
@@ -162,7 +163,7 @@ build 执行 `vue-tsc -b && vite build`，先类型检查，再生成 `frontend/
 
 测试通过 FastAPI TestClient 调用实际 HTTP 层，每个用例使用独立的 `tmp_path/test.db` SQLite 数据库并开启外键。Router 的 get_db 和健康检查的 Session 均指向测试数据库；TestClient 不进入生产 lifespan，测试守卫禁止生产 engine 连接或 init_db 执行。测试不会读取、清空或修改 `backend/data/aiexphub.db`。临时目录由 pytest 管理，结束后关闭会话、清空 dependency overrides 并 dispose 测试 engine。
 
-开发依赖固定 pytest 9.1.1；httpx 0.28.1 同时用于测试与 AI 运行请求，python-dotenv 1.2.4 用于本地配置。当前有 248 个用例，包含原 201 个业务 / 数据库用例和 47 个 AI 快照、配置、调用与异常用例；AI 测试使用模拟 HTTP，不产生费用。测试覆盖严格校验、数据库约束、项目隔离、最新结果、差值与缺失原因、只读预览、整批回滚、引用保护和迁移保留 / 回滚；测试文件可独立执行。现有 Starlette 1.7.0 会提示 TestClient 使用 httpx 的第三方弃用 warning，调用仍正常，未为消除 warning 升级框架。前端使用现有 Node 运行：在 frontend 执行 `node --test tests/*.test.ts`，60 个测试通过，无额外测试依赖。
+开发依赖固定 pytest 9.1.1；httpx 0.28.1 同时用于测试与 AI 运行请求，python-dotenv 1.2.4 用于本地配置。当前有 249 个用例，包含原业务 / 数据库用例和 AI 快照、配置、调用与异常用例；AI 测试使用模拟 HTTP，不产生费用。测试覆盖严格校验、数据库约束、项目隔离、最新结果、差值与缺失原因、只读预览、整批回滚、引用保护和迁移保留 / 回滚；测试文件可独立执行。现有 Starlette 1.7.0 会提示 TestClient 使用 httpx 的第三方弃用 warning，调用仍正常，未为消除 warning 升级框架。前端使用 Node 内置测试运行器，在 `frontend` 执行 `npm test`（等价于 `node --test tests/*.test.ts`），当前 74 个测试通过，无额外测试依赖。
 
 ## 当前限制
 
@@ -282,9 +283,13 @@ AIExpHub/
 │   │   │   ├── chart-image.ts
 │   │   │   ├── download.ts
 │   │   │   ├── experiment-copy.ts
+│   │   │   ├── experiment-parameters.ts
 │   │   │   ├── mapping-templates.ts
 │   │   │   └── json-metrics.ts
 │   │   ├── components/
+│   │   │   ├── ExperimentFormDialog.vue
+│   │   │   ├── ExperimentParametersEditor.vue
+│   │   │   ├── ExperimentResultDialog.vue
 │   │   │   ├── ComparisonCharts.vue
 │   │   │   ├── CustomMetricChart.vue
 │   │   │   ├── ProjectMetrics.vue
@@ -297,6 +302,7 @@ AIExpHub/
 │   │   └── style.css
 │   ├── index.html
 │   ├── tests/                # 使用 Node 内置测试运行器
+│   │   ├── experiment-parameters.test.ts
 │   │   ├── json-files.test.ts
 │   │   ├── metric-delta.test.ts
 │   │   ├── comparison-sync.test.ts

@@ -18,8 +18,8 @@ const steps = [
   { icon: 'project' as const, title: '创建项目', text: '确定研究主题', action: () => createProject() },
   { icon: 'batch' as const, title: '建立批次', text: '为一组实验命名', action: () => picker.value?.open('manage-batches') },
   { icon: 'experiment' as const, title: '录入实验', text: '填写模型与参数', action: () => picker.value?.open('new-experiment') },
-  { icon: 'result' as const, title: '保存结果', text: '手动录入或导入 JSON', action: () => picker.value?.open() },
-  { icon: 'compare' as const, title: '勾选比较', text: '选择至少两个实验', action: () => picker.value?.open() },
+  { icon: 'result' as const, title: '进入工作区', text: '在实验详情中录入结果', action: () => picker.value?.open() },
+  { icon: 'compare' as const, title: '选择实验比较', text: '在工作区勾选至少两个实验', action: () => picker.value?.open() },
   { icon: 'chart' as const, title: '查看分析', text: '图表、导出与 AI 总结', action: () => router.push('/compare') },
 ]
 function createProject(): void { void router.push({ path: '/projects', query: { action: 'create' } }) }

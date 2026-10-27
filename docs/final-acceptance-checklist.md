@@ -2,12 +2,14 @@
 
 适用阶段：6B；准备日期：2026-10-08。6A 只勾选本次自动检查、只读审计和已经建立的文档，不把过去浏览器验证当作本轮最终人工操作。6B 执行时记录时间、提交 SHA、环境和真实证据，再勾选对应项。本清单不是评分声明。
 
+6B 本次进度见 [最终验收报告](final-acceptance-report.md)：演示前 pytest 102 passed、0 failed、0 errors、1 warning，8.99s；TypeScript / build 通过。当前停止在人工窗口检查点，未勾选混合了尚未执行子项的检查，清理后最终回归、清理与提交仍待执行。
+
 ## 环境
 
 - [x] 6A 检查 main 与 origin/main / 远端基线一致，已有阶段 5B。
 - [x] 本工作区 backend Python 3.12 虚拟环境可用，pip check 无依赖冲突。
 - [x] 6A 未安装 / 升级依赖，前端现有依赖能完成构建。
-- [ ] 在最终演示设备核对 Python / Node 版本，按 README 从项目根目录启动。
+- [x] 在最终演示设备核对 Python / Node 版本，按 README 从项目根目录启动。
 - [ ] 如课程需干净环境复现，使用锁定依赖完成首次安装并记录结果。
 - [ ] 记录实际日期、系统、浏览器、后端 / 前端地址及最终提交 SHA。
 
@@ -15,7 +17,7 @@
 
 - [x] 6A pytest：102 passed、0 failed、1 warning，7.15s；测试使用独立临时数据库。
 - [x] 检查请求级 Session、Schema、ORM 约束和 Compare 只读查询的实现证据。
-- [ ] 最终启动 Uvicorn，真实 `/health`、`/docs` 与 API 可用，无阻断性错误。
+- [x] 最终启动 Uvicorn，真实 `/health`、`/docs` 与 API 可用，无阻断性错误。
 - [ ] 6B 最终版本再执行 pytest，记录 passed / failed / warning / 耗时。
 
 ## 前端
@@ -29,32 +31,32 @@
 
 ## 核心流程
 
-- [ ] 通过前端创建 Project A、Batch A、Experiment A，并录入 Result A。
-- [ ] 创建第二项目、批次、Experiment B 和 Result B，展示跨项目数据组织。
-- [ ] 查看实验列表、模型、parameters、备注、创建时间和结果详情。
+- [x] 通过前端创建 Project A、Batch A、Experiment A，并录入 Result A。
+- [x] 创建第二项目、批次、Experiment B 和 Result B，展示跨项目数据组织。
+- [x] 查看实验列表、模型、parameters、备注、创建时间和结果详情。
 - [ ] 编辑项目 / 批次 / 实验后重新读取；刷新页面数据仍在。
-- [ ] 对照 SQLite 持久化行为，避免仅展示固定静态值。
-- [ ] 证明 Project → Batch → Experiment → Result → Compare → 图表的完整闭环。
+- [x] 对照 SQLite 持久化行为，避免仅展示固定静态值。
+- [x] 证明 Project → Batch → Experiment → Result → Compare → 图表的完整闭环。
 
 ## 业务规则
 
 - [ ] 空白 Project / Batch / model_name 拒绝，合法名称保存后正常显示。
-- [ ] 输入 `" exp-001 "` 规范化为 EXP-001；跨项目重复编号被拒绝。
-- [ ] parameters 缺失 / null / 非对象 / {} 被拒绝，自由键合法对象可保存。
-- [ ] Result 可以暂未录入，但录入后不能五项全空；0 与范围边界合法。
-- [ ] 非法范围、bool / string / NaN / ±Infinity 的 API 验证有可复现测试证据。
-- [ ] 已有结果重复 POST 返回 409，PUT 修改当前结果且不产生历史版本。
-- [ ] 有 Batch 的 Project / 有 Experiment 的 Batch 删除受限。
+- [x] 输入 `" exp-001 "` 规范化为 EXP-001；跨项目重复编号被拒绝。
+- [x] parameters 缺失 / null / 非对象 / {} 被拒绝，自由键合法对象可保存。（本次 pytest 与 {} / 合法对象现场操作）
+- [x] Result 可以暂未录入，但录入后不能五项全空；0 与范围边界合法。（本次 pytest 与首次录入现场操作）
+- [x] 非法范围、bool / string / NaN / ±Infinity 的 API 验证有可复现测试证据。
+- [x] 已有结果重复 POST 返回 409，PUT 修改当前结果且不产生历史版本。（重复 POST / 单份结果由本次 pytest 验证，PUT 另有页面操作）
+- [x] 有 Batch 的 Project / 有 Experiment 的 Batch 删除受限。
 - [ ] 删除 Experiment 后，通过结果 API / 数据层证据确认 Result CASCADE。
 
 ## 比较
 
-- [ ] 至少两个不同真实 Experiment，跨项目 / 批次仍可加入，重复加入不可计数。
+- [x] 至少两个不同真实 Experiment，跨项目 / 批次仍可加入，重复加入不可计数。
 - [ ] 保持加入顺序，缺失指标为 null / -，真实 0 不被丢弃；无 Result 明确标识。
-- [ ] 四项 max、loss min、全空无最佳、并列最佳行为有测试与现场对应证据。
-- [ ] 另一标签修改 Result 后重新比较，最新表格、摘要和图同步变化。
-- [ ] Network 或访问日志确认一次 Compare POST，没有逐实验 Result GET；明确使用哪种证据。
-- [ ] 比较不写业务数据、没有比较历史或缓存；自动测试证明一次只读 SELECT。
+- [x] 四项 max、loss min、全空无最佳、并列最佳行为有测试与现场对应证据。（全空 / 并列由本次 pytest，max / min 另有现场证据）
+- [x] 另一标签修改 Result 后重新比较，最新表格、摘要和图同步变化。
+- [x] Network 或访问日志确认一次 Compare POST，没有逐实验 Result GET；明确使用哪种证据。（本次使用 Uvicorn 访问日志）
+- [x] 比较不写业务数据、没有比较历史或缓存；自动测试证明一次只读 SELECT。
 
 ## 图表
 
@@ -88,7 +90,7 @@
 
 - [x] 6A 开始时四表各 0，数据库通过只读连接检查，没有创建业务样例。
 - [x] 调试与临时验收源代码扫描无遗留命中，未清理或改写业务代码。
-- [ ] 6B 前确认最终版本 Git 工作区干净、main 与 origin/main / 远端一致。
+- [x] 6B 前确认最终版本 Git 工作区干净、main 与 origin/main / 远端一致。
 - [ ] 6B 演示后通过正常 API 按 Experiment → Batch → Project 清理本轮数据，Result 自动 CASCADE。
 - [ ] 确认四表记录数归零并保留数据库；如起始存在其他用户数据，先核对归属，只清理本轮数据。
 - [ ] 确认 node_modules、dist、.venv、数据库、缓存、临时截图没有提交；按课程要求单独交付视频。

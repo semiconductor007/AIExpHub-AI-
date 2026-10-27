@@ -64,6 +64,8 @@ FastAPI 启动 lifespan 注册 ORM 并调用 `create_all`，退出 dispose engin
 
 没有额外 service / repository 层，当前规模直接在 Router 使用 Session 足够；不为了分层新增空壳模块。Compare Router 先于 `/experiments/{experiment_id}` 注册，避免 compare 被解释为动态 ID。
 
+前端实验工作区采用按职责拆分的表单组件：`ExperimentFormDialog.vue` 负责实验配置的新建、编辑和复制，`ExperimentParametersEditor.vue` 负责参数行与高级 JSON 的双向转换，`ExperimentResultDialog.vue` 负责结果指标校验、JSON 映射和保存事件。`ExperimentManagementView.vue` 只保留项目 / 批次上下文、列表、详情和 API 协调。比较页本轮保持现状，后端 Router、ORM 模型和数据库约束也不为行数或形式上的分层改动。组件通过 typed props / emits 与页面通信，校验和业务写入仍各自位于表单组件与父页面的明确边界内。
+
 ## 6 数据模型设计
 
 ```mermaid
@@ -152,7 +154,7 @@ Schema 输入非法返回标准 422 detail；资源不存在 404；重复编号 
 
 [conftest.py](../backend/tests/conftest.py) 为每个测试使用 tmp_path 下独立 SQLite、启用 foreign_keys、创建临时表；get_db dependency override 和 health Session 指向临时数据库。不启动生产 lifespan，生产 engine / init_db 连接守卫防误用；用后关闭 client、清空 overrides 并 dispose engine。因此自动测试不接触运行数据库。没有 coverage 报告，不宣称 100% 覆盖。
 
-前端 build 执行 vue-tsc 再 Vite；没有前端测试框架。既有真实 HTTP 与浏览器流程见审计文档历史记录，6B 再进行最终真实操作。6A 本次：pip check 正常；102 passed、0 failed、1 warning、7.15s；build 0 类型 / 构建错误，保留 chunk warning；四表 0，生产数据库保持原文件。6A 没有创建验收数据或录制视频。
+前端 build 执行 vue-tsc 再 Vite；前端测试使用 Node 内置测试运行器，通过 `npm test` 统一入口执行。既有真实 HTTP 与浏览器流程见审计文档历史记录，6B 再进行最终真实操作。当前回归：后端 249 passed、0 failed、1 warning；前端 74 passed、0 failed；TypeScript / Vite build 通过并保留既有 chunk warning。测试不写入生产数据库；本次工程化整理只调整前端表单组件边界与测试入口。
 
 ## 14 AI 辅助开发流程
 
