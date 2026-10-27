@@ -1,6 +1,6 @@
 # 后续改进计划
 
-2026-10-27：按 [AI 实验总结实施方案](ai-experiment-summary-plan.md) 完成后端、比较页和模拟验收；真实 DeepSeek 调用待用户填写本地配置后验证。见 [配置与使用](ai-experiment-summary.md)。
+2026-10-27：按 [AI 实验总结实施方案](ai-experiment-summary-plan.md) 完成后端、比较页和模拟验收；用户配置后已通过合成数据真实 DeepSeek 调用验收。见 [配置与使用](ai-experiment-summary.md)。
 
 制定日期：2026-10-13。初次交付仅形成计划；随后经用户授权，I1 已实现并完成验证，见 [基准比较说明](baseline-comparison.md)。I2 / E1 与 E2 已按 2026-10-24 用户审核方案完成；其他阶段未启动。
 

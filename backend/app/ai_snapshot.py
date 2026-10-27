@@ -15,7 +15,7 @@ from app.models import Experiment
 from app.routers.compare import compare_experiments
 from app.schemas import ExperimentCompareRequest
 
-RULE_VERSION = "ai-summary-v1"
+RULE_VERSION = "ai-summary-v3"
 BUILTINS = ("accuracy", "precision", "recall", "f1", "loss")
 WARNINGS = [
     "同一项目不代表数据集、测试划分、硬件和指标口径一致；未提供的评测条件不能视为一致。",

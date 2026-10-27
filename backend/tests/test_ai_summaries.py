@@ -61,7 +61,7 @@ def narrative(snapshot):
     item_id = snapshot["data"]["experiment_ids"][0]
     return {"sections": [{"key": key, "items": [{
         "kind": "suggestion" if key == "next_steps" else "observation", "text": "请核对评测条件。",
-        "experiment_ids": [item_id], "metric_ids": [], "evidence_ids": [f"experiment:{item_id}"],
+        "evidence_ids": [f"experiment:{item_id}"],
     }]} for key in SECTIONS]}
 
 
@@ -232,6 +232,18 @@ def test_narrative_schema_and_evidence_rejection(client, records, mutate):
     with pytest.raises(HTTPException) as exc:
         ai_provider.validate_narrative(json.dumps(output), snapshot)
     assert exc.value.status_code == 502
+
+
+def test_experiment_and_metric_links_are_derived_from_real_evidence(client, records):
+    snapshot = preview(client, records)
+    output = narrative(snapshot)
+    output["sections"][1]["items"][0]["evidence_ids"] = ["metric:system:accuracy", "metric:system:loss"]
+    result = ai_provider.validate_narrative(json.dumps(output), snapshot)
+    overview = result.sections[0].items[0]
+    assert overview.experiment_ids == [records[0]["id"]] and overview.metric_ids == []
+    metrics = result.sections[1].items[0]
+    assert metrics.experiment_ids == sorted(item["id"] for item in records)
+    assert metrics.metric_ids == ["system:accuracy", "system:loss"]
 
 
 def install_mock_transport(monkeypatch, handler):

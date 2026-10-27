@@ -40,24 +40,35 @@ class GenerateSummary(SnapshotCheck):
     request_id: UUID
 
 
-class NarrativeItem(StrictModel):
+class ProviderItem(StrictModel):
     kind: Literal["observation", "hypothesis", "suggestion"]
     text: ShortText
-    experiment_ids: list[PositiveId] = Field(max_length=10)
-    metric_ids: list[Reference] = Field(max_length=64)
     evidence_ids: list[Reference] = Field(min_length=1, max_length=32)
 
 
-class NarrativeSection(StrictModel):
+class NarrativeItem(ProviderItem):
+    experiment_ids: list[PositiveId] = Field(max_length=10)
+    metric_ids: list[Reference] = Field(max_length=64)
+
+
+class ProviderSection(StrictModel):
     key: Literal["overview", "metrics", "parameters", "limitations", "next_steps"]
+    items: list[ProviderItem] = Field(min_length=1, max_length=4)
+
+
+class NarrativeSection(ProviderSection):
     items: list[NarrativeItem] = Field(min_length=1, max_length=4)
 
 
-class SummaryNarrative(StrictModel):
-    sections: list[NarrativeSection] = Field(min_length=5, max_length=5)
+class ProviderNarrative(StrictModel):
+    sections: list[ProviderSection] = Field(min_length=5, max_length=5)
 
     @model_validator(mode="after")
     def fixed_sections(self) -> Self:
         if tuple(section.key for section in self.sections) != SECTIONS:
             raise ValueError("总结章节缺失、重复或顺序不符")
         return self
+
+
+class SummaryNarrative(ProviderNarrative):
+    sections: list[NarrativeSection] = Field(min_length=5, max_length=5)
