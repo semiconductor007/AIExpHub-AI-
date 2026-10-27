@@ -511,8 +511,11 @@ onBeforeUnmount(() => { contextRequest += 1; batchRequest += 1; experimentReques
   <el-card shadow="never" class="management-card">
     <template #header>
       <div class="card-header"><h2>当前项目</h2>
-        <el-button :loading="projectsLoading" :disabled="busy || batchesLoading || experimentsLoading" @click="initializeContext(true)">刷新工作区</el-button>
-        <div class="card-actions"><el-button :disabled="!projectId || busy || projectsLoading" @click="batchManagerOpen = true">管理批次</el-button><el-button :disabled="!projectId || busy || projectsLoading" @click="metricManagerOpen = true">管理指标</el-button></div>
+        <div class="workspace-secondary-actions">
+          <el-button :loading="projectsLoading" :disabled="busy || batchesLoading || experimentsLoading" @click="initializeContext(true)">刷新工作区</el-button>
+          <el-button :disabled="!projectId || busy || projectsLoading" @click="batchManagerOpen = true">管理批次</el-button>
+          <el-button :disabled="!projectId || busy || projectsLoading" @click="metricManagerOpen = true">管理指标</el-button>
+        </div>
       </div>
     </template>
     <el-alert v-if="projectsError" :title="projectsError" type="error" :closable="false" show-icon />
@@ -546,11 +549,15 @@ onBeforeUnmount(() => { contextRequest += 1; batchRequest += 1; experimentReques
     <template #header>
       <div class="card-header">
         <h2>{{ selectedBatch ? selectedBatch.name : '全部批次' }} · 实验（{{ visibleExperiments.length }}）</h2>
-        <div class="card-actions">
-          <ExperimentImport :project-id="projectId" :batch-id="batchId" :batch-name="selectedBatch?.name" :batches="batches" :disabled="busy || experimentsLoading || projectsLoading" @busy="importBusy = $event" @imported="loadExperiments" />
-          <el-button :disabled="busy || projectsLoading || experimentsLoading || checkedIds.length < 2" @click="compareChecked">比较所选实验（{{ checkedIds.length }}）</el-button>
-          <el-button :loading="experimentsLoading" :disabled="!projectId || busy" @click="loadExperiments">刷新实验</el-button>
-          <el-button type="primary" :disabled="!projectId || !batches.length || busy || projectsLoading || experimentsLoading" @click="openExperimentDialog()">新建实验</el-button>
+        <div class="card-actions workspace-card-actions">
+          <div class="workspace-primary-actions">
+            <el-button type="primary" :disabled="!projectId || !batches.length || busy || projectsLoading || experimentsLoading" @click="openExperimentDialog()">新建实验</el-button>
+            <el-button :disabled="busy || projectsLoading || experimentsLoading || checkedIds.length < 2" @click="compareChecked">比较所选实验（{{ checkedIds.length }}）</el-button>
+          </div>
+          <div class="workspace-secondary-actions">
+            <ExperimentImport :project-id="projectId" :batch-id="batchId" :batch-name="selectedBatch?.name" :batches="batches" :disabled="busy || experimentsLoading || projectsLoading" @busy="importBusy = $event" @imported="loadExperiments" />
+            <el-button :loading="experimentsLoading" :disabled="!projectId || busy" @click="loadExperiments">刷新实验</el-button>
+          </div>
         </div>
       </div>
     </template>
@@ -669,8 +676,13 @@ onBeforeUnmount(() => { contextRequest += 1; batchRequest += 1; experimentReques
 .edit-result { margin-top: 20px; }
 .result-metric-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 16px; }
 .metric-hint { margin: 0 0 4px; color: #6b7280; font-size: 12px; width: 100%; }
+.workspace-card-actions { flex: 1; justify-content: flex-end; }
+.workspace-primary-actions, .workspace-secondary-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.workspace-secondary-actions { padding-left: 12px; border-left: 1px solid #e5e7eb; }
 @media (max-width: 480px) {
   .result-metric-form { grid-template-columns: minmax(0, 1fr); }
+  .workspace-card-actions { width: 100%; justify-content: flex-start; }
+  .workspace-secondary-actions { padding-left: 0; border-left: 0; }
 }
 </style>
 
