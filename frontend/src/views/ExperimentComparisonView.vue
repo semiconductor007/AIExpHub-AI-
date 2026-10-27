@@ -10,13 +10,11 @@ import type { ExperimentBatch } from '../api/batches'
 import { getExperiment, getBatchExperiments } from '../api/experiments'
 import type { Experiment } from '../api/experiments'
 import { compareExperiments } from '../api/compare'
-import type { ComparisonExperiment, ExperimentCompareResponse, MetricName } from '../api/compare'
+import type { ExperimentCompareResponse, MetricName } from '../api/compare'
 import { getApiErrorMessage } from '../api/errors'
 import ComparisonCharts from '../components/ComparisonCharts.vue'
 import CustomMetricChart from '../components/CustomMetricChart.vue'
-import { metricLabel } from '../api/metrics'
-import type { CustomMetricComparison } from '../api/compare'
-import MetricDeltaDisplay from '../components/MetricDeltaDisplay.vue'
+import ComparisonMetricTable from '../components/ComparisonMetricTable.vue'
 import AiExperimentSummary from '../components/AiExperimentSummary.vue'
 import { affectsComparison, subscribeComparisonChanges } from '../utils/comparison-changes'
 import type { ComparisonChange } from '../utils/comparison-changes'
@@ -58,7 +56,6 @@ const selectedById = computed(() => new Map(selectedExperiments.value.map(experi
 const comparisonResult = ref<ExperimentCompareResponse | null>(null)
 const baselineId = ref<number | null>(null)
 const baselineExperiment = computed(() => comparisonResult.value?.experiments.find(item => item.id === comparisonResult.value?.baseline_comparison?.baseline_experiment_id))
-const deltaMetrics = computed(() => new Map((comparisonResult.value?.baseline_comparison?.metrics ?? []).map(metric => [`${metric.project_id ?? 'system'}:${metric.key}`, metric])))
 const isCrossProject = computed(() => new Set(comparisonResult.value?.experiments.map(item => item.project_id)).size > 1)
 const projectsLoading = ref(false)
 const batchesLoading = ref(false)
@@ -206,10 +203,6 @@ function clearComparison(): void {
 }
 
 watch(baselineId, () => { clearComparison(); saveSelection() }, { flush: 'sync' })
-
-function deltaValue(experimentId: number, key: string, project: number | null = null) {
-  return deltaMetrics.value.get(`${project ?? 'system'}:${key}`)?.comparisons[experimentId]
-}
 
 function addExperiment(experiment: Experiment): void {
   if (comparisonBusy.value || selectedById.value.has(experiment.id) || !selectedProject.value || !selectedBatch.value) return
@@ -402,33 +395,6 @@ function checkLatest(): void {
   autoRefresh.request()
 }
 
-function projectName(experiment: ComparisonExperiment): string {
-  const metadata = selectedById.value.get(experiment.id)
-  return metadata?.project_id === experiment.project_id ? metadata.project_name : `Project #${experiment.project_id}`
-}
-
-function batchName(experiment: ComparisonExperiment): string {
-  const metadata = selectedById.value.get(experiment.id)
-  return metadata?.batch_id === experiment.batch_id ? metadata.batch_name : `Batch #${experiment.batch_id}`
-}
-
-function metricValue(experiment: ComparisonExperiment, metric: MetricName): number | string {
-  const value = experiment.result?.[metric]
-  return value === null || value === undefined ? '-' : value
-}
-
-function isBest(experimentId: number, metric: MetricName): boolean {
-  return comparisonResult.value?.best_by_metric[metric].experiment_ids.includes(experimentId) ?? false
-}
-
-function metricHeading(metric: MetricName, label: string): string {
-  return `${label} ${comparisonResult.value?.best_by_metric[metric].direction === 'min' ? '↓' : '↑'}`
-}
-
-function customMetricHeading(metric: CustomMetricComparison): string {
-  return `${metric.project_name} / ${metricLabel(metric.definition)} ${metric.definition.direction === 'min' ? '↓' : '↑'}`
-}
-
 onMounted(() => {
   void loadProjects()
   unsubscribeChanges = subscribeComparisonChanges(receiveChange)
@@ -539,7 +505,7 @@ onBeforeUnmount(() => {
             <p>↑ 越大越好，↓ 越小越好；自定义指标按所属项目分别比较，缺失值不补 0。</p>
             <p>选择基准后重新比较。差值为当前实验减基准，按指标方向判断改善或退步。</p>
             <p>最近获取：{{ lastUpdatedLabel }}</p>
-            <p>导出前会刷新数据。CSV 包含原始指标、最佳结果及已选基准的差值；图表可分别导出 PNG。</p>
+            <p>导出前会刷新数据。CSV 包含全部已选实验和所有指标，不受表格筛选或分组影响，并保留最佳结果及已选基准的差值；图表可分别导出 PNG。</p>
           </div>
         </el-popover>
       </div>
@@ -556,37 +522,8 @@ onBeforeUnmount(() => {
       <el-tabs v-model="analysisTab" class="analysis-tabs">
         <el-tab-pane label="指标表格" name="table">
           <template v-if="comparisonResult">
-            <div class="table-toolbar"><span>{{ baselineExperiment ? `基准：${baselineExperiment.experiment_no}` : '原始指标' }}</span><el-button :loading="exporting" :disabled="comparisonBusy" @click="exportComparison()">导出比较表 CSV</el-button></div>
-        <ul class="best-summary" aria-label="最佳指标摘要">
-          <li v-for="metric in metrics" :key="metric.key">
-            <span>{{ metric.label }}：</span>
-            <span v-if="comparisonResult.best_by_metric[metric.key].value === null">暂无可比较数据</span>
-            <span v-else>最佳 {{ comparisonResult.best_by_metric[metric.key].value }}<span v-if="comparisonResult.best_by_metric[metric.key].experiment_ids.length > 1">（{{ comparisonResult.best_by_metric[metric.key].experiment_ids.length }} 个实验并列）</span></span>
-          </li>
-        </ul>
-        <template v-if="comparisonResult.custom_metrics?.length">
-          <h3>项目自定义指标</h3>
-          <ul class="best-summary" aria-label="自定义指标最佳摘要">
-            <li v-for="metric in comparisonResult.custom_metrics" :key="`${metric.definition.project_id}:${metric.definition.key}`">
-              {{ customMetricHeading(metric) }}：
-              <span v-if="metric.best.value === null">暂无可比较数据</span>
-              <span v-else>最佳 {{ metric.best.value }}<span v-if="metric.best.experiment_ids.length > 1">（{{ metric.best.experiment_ids.length }} 个实验并列）</span></span>
-            </li>
-          </ul>
-        </template>
-        <el-table :data="comparisonResult.experiments" row-key="id" aria-label="实验比较结果列表">
-          <el-table-column label="实验编号" min-width="140" show-overflow-tooltip><template #default="{ row }"><div class="metric-cell">{{ row.experiment_no }}<el-tag v-if="row.id === comparisonResult.baseline_comparison?.baseline_experiment_id" type="warning" size="small">基准</el-tag></div></template></el-table-column>
-          <el-table-column prop="model_name" label="模型名称" min-width="120" show-overflow-tooltip />
-          <el-table-column label="项目" min-width="120" show-overflow-tooltip><template #default="{ row }">{{ projectName(row) }}</template></el-table-column>
-          <el-table-column label="批次" min-width="110" show-overflow-tooltip><template #default="{ row }">{{ batchName(row) }}</template></el-table-column>
-          <el-table-column v-for="metric in comparisonResult.custom_metrics ?? []" :key="`${metric.definition.project_id}:${metric.definition.key}`" :label="customMetricHeading(metric)" :min-width="comparisonResult.baseline_comparison ? 220 : 180">
-            <template #default="{ row }"><div class="metric-cell"><span>{{ metric.values[row.id] ?? '-' }}</span><el-tag v-if="metric.best.experiment_ids.includes(row.id)" type="success" size="small">最佳</el-tag></div><MetricDeltaDisplay v-if="comparisonResult.baseline_comparison" :value="deltaValue(row.id, metric.definition.key, metric.definition.project_id)" :unit="metric.definition.unit" /></template>
-          </el-table-column>
-          <el-table-column v-for="metric in metrics" :key="metric.key" :label="metricHeading(metric.key, metric.label)" :min-width="comparisonResult.baseline_comparison ? 180 : 106">
-            <template #default="{ row }"><div class="metric-cell"><span>{{ metricValue(row, metric.key) }}</span><el-tag v-if="isBest(row.id, metric.key)" type="success" size="small">最佳</el-tag></div><MetricDeltaDisplay v-if="comparisonResult.baseline_comparison" :value="deltaValue(row.id, metric.key)" /></template>
-          </el-table-column>
-          <el-table-column label="结果状态" width="110"><template #default="{ row }"><el-tag :type="row.result === null ? 'info' : 'success'" size="small">{{ row.result === null ? '未录入结果' : '已录入结果' }}</el-tag></template></el-table-column>
-        </el-table>
+            <div class="table-toolbar"><span>{{ baselineExperiment ? `基准：${baselineExperiment.experiment_no}` : '原始指标' }}</span><el-button :loading="exporting" :disabled="comparisonBusy" @click="exportComparison()">导出完整比较 CSV</el-button></div>
+            <ComparisonMetricTable :result="comparisonResult" :metadata="selectedExperiments" :active="analysisTab === 'table'" />
           </template>
         </el-tab-pane>
         <el-tab-pane label="可视化" name="charts" lazy>
@@ -615,10 +552,7 @@ onBeforeUnmount(() => {
 .comparison-help p { margin: 0 0 10px; }
 .comparison-help p:last-child { margin-bottom: 0; }
 .result-content { min-height: 120px; }
-.metric-cell { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .baseline-selector { margin-bottom: 16px; }
 .baseline-selector label { display: block; margin-bottom: 8px; font-weight: 600; }
 .baseline-selector .el-select { width: min(100%, 520px); }
-.baseline-summary { margin-top: 0; }
-.best-summary { display: flex; flex-wrap: wrap; gap: 12px 24px; list-style: none; margin: 0 0 20px; padding: 0; color: #4b5563; font-size: 14px; line-height: 1.8; }
 </style>
