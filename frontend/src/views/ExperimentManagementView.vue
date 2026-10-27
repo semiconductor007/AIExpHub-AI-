@@ -17,6 +17,7 @@ import { getApiErrorMessage, isApiErrorDetail } from '../api/errors'
 import { formatDateTime } from '../utils/datetime'
 import ExperimentImport from '../components/ExperimentImport.vue'
 import ResultJsonMapper from '../components/ResultJsonMapper.vue'
+import { comparisonQuery } from '../utils/comparison-selection'
 import { copyExperimentDraft } from '../utils/experiment-copy'
 
 const route = useRoute()
@@ -24,6 +25,11 @@ const router = useRouter()
 const projects = ref<Project[]>([])
 const batches = ref<ExperimentBatch[]>([])
 const experiments = ref<Experiment[]>([])
+const checkedExperiments = ref<Experiment[]>([])
+function compareChecked(): void {
+  if (checkedExperiments.value.length < 2) return
+  void router.push({ path: '/compare', query: comparisonQuery(checkedExperiments.value.map(item => item.id)) })
+}
 const projectId = ref<number | null>(null)
 const batchId = ref<number | null>(null)
 const selectedExperiment = ref<Experiment | null>(null)
@@ -69,6 +75,7 @@ function clearExperimentSelection(): void {
 function clearExperiments(): void {
   experimentRequest += 1
   experiments.value = []
+  checkedExperiments.value = []
   experimentsError.value = ''
   experimentsLoading.value = false
   clearExperimentSelection()
@@ -488,6 +495,7 @@ onBeforeUnmount(() => { contextRequest += 1; batchRequest += 1; experimentReques
         <div class="card-actions">
           <ExperimentImport :project-id="projectId" :batch-id="batchId" :batch-name="selectedBatch?.name" :disabled="busy || experimentsLoading"
                             @busy="importBusy = $event" @imported="loadExperiments" />
+          <el-button :disabled="busy || checkedExperiments.length < 2" @click="compareChecked">比较所选实验（{{ checkedExperiments.length }}）</el-button>
           <el-button :loading="experimentsLoading" :disabled="!batchId || busy" @click="loadExperiments">刷新实验</el-button>
           <el-button type="primary" :disabled="!batchId || busy || experimentsLoading" @click="openExperimentDialog()">新建实验</el-button>
         </div>
@@ -498,7 +506,8 @@ onBeforeUnmount(() => { contextRequest += 1; batchRequest += 1; experimentReques
     <el-empty v-else-if="!experimentsLoading && experiments.length === 0" description="当前批次暂无实验记录">
       <el-button type="primary" :disabled="busy" @click="openExperimentDialog()">新建实验</el-button>
     </el-empty>
-    <el-table v-else v-loading="experimentsLoading" :data="experiments" row-key="id" aria-label="实验记录列表">
+    <el-table v-else v-loading="experimentsLoading" :data="experiments" row-key="id" aria-label="实验记录列表" @selection-change="checkedExperiments = $event">
+      <el-table-column type="selection" width="48" :selectable="() => !busy" />
       <el-table-column prop="experiment_no" label="实验编号" min-width="140" show-overflow-tooltip />
       <el-table-column prop="model_name" label="模型名称" min-width="150" show-overflow-tooltip />
       <el-table-column label="参数" min-width="200" show-overflow-tooltip>

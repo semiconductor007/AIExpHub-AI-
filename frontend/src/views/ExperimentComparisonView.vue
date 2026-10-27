@@ -1,13 +1,13 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { isAxiosError } from 'axios'
 import { getProjects } from '../api/projects'
 import type { Project } from '../api/projects'
-import { getProjectBatches } from '../api/batches'
+import { getBatch, getProjectBatches } from '../api/batches'
 import type { ExperimentBatch } from '../api/batches'
-import { getBatchExperiments } from '../api/experiments'
+import { getExperiment, getBatchExperiments } from '../api/experiments'
 import type { Experiment } from '../api/experiments'
 import { compareExperiments } from '../api/compare'
 import type { ComparisonExperiment, ExperimentCompareResponse, MetricName } from '../api/compare'
@@ -26,7 +26,10 @@ import { downloadBlob } from '../utils/download'
 import { createChartPng } from '../utils/chart-image'
 import type { ChartExportSpec, ChartExportTarget } from '../utils/chart-export-layout'
 
+import { comparisonIds, comparisonQuery } from '../utils/comparison-selection'
+
 interface SelectedExperiment {
+  missing?: boolean
   id: number
   experiment_no: string
   model_name: string
@@ -37,6 +40,10 @@ interface SelectedExperiment {
 }
 
 const router = useRouter()
+const route = useRoute()
+const candidateOpen = ref(false)
+const restoring = ref(false)
+let restoreRequest = 0
 const projects = ref<Project[]>([])
 const batches = ref<ExperimentBatch[]>([])
 const experiments = ref<Experiment[]>([])
@@ -57,7 +64,7 @@ const batchesLoading = ref(false)
 const experimentsLoading = ref(false)
 const compareLoading = ref(false)
 const exporting = ref(false)
-const comparisonBusy = computed(() => compareLoading.value || exporting.value)
+const comparisonBusy = computed(() => compareLoading.value || exporting.value || restoring.value)
 const exportError = ref('')
 const builtinCharts = ref<InstanceType<typeof ComparisonCharts> | null>(null)
 const customCharts = ref<InstanceType<typeof CustomMetricChart>[]>([])
@@ -197,7 +204,7 @@ function clearComparison(): void {
   compareError.value = ''
 }
 
-watch(baselineId, clearComparison, { flush: 'sync' })
+watch(baselineId, () => { clearComparison(); saveSelection() }, { flush: 'sync' })
 
 function deltaValue(experimentId: number, key: string, project: number | null = null) {
   return deltaMetrics.value.get(`${project ?? 'system'}:${key}`)?.comparisons[experimentId]
@@ -212,6 +219,7 @@ function addExperiment(experiment: Experiment): void {
     batch_id: selectedBatch.value.id, batch_name: selectedBatch.value.name,
   })
   clearComparison()
+  saveSelection()
 }
 
 function removeExperiment(id: number): void {
@@ -219,6 +227,7 @@ function removeExperiment(id: number): void {
   selectedExperiments.value = selectedExperiments.value.filter(experiment => experiment.id !== id)
   if (baselineId.value === id) baselineId.value = null
   clearComparison()
+  saveSelection()
 }
 
 function clearSelection(): void {
@@ -226,7 +235,54 @@ function clearSelection(): void {
   selectedExperiments.value = []
   baselineId.value = null
   clearComparison()
+  saveSelection()
 }
+
+function saveSelection(): void {
+  if (restoring.value || disposed) return
+  void router.replace({ query: comparisonQuery(selectedExperiments.value.map(item => item.id), baselineId.value) })
+}
+
+async function restoreSelection(): Promise<void> {
+  const request = ++restoreRequest
+  let ids: number[]
+  try { ids = comparisonIds(route.query.ids) }
+  catch (error) { clearComparison(); compareError.value = (error as Error).message; return }
+  const baseline = typeof route.query.baseline === 'string' && /^[1-9]\d*$/.test(route.query.baseline)
+    && ids.includes(Number(route.query.baseline)) ? Number(route.query.baseline) : null
+  if (ids.join(',') === selectedExperiments.value.map(item => item.id).join(',') && baseline === baselineId.value) return
+  clearComparison()
+  restoring.value = true
+  try {
+    const projectList = await getProjects()
+    if (request !== restoreRequest) return
+    projects.value = projectList
+    const batchCache = new Map<number, Promise<ExperimentBatch>>()
+    const restored = await Promise.all(ids.map(async id => {
+      let experiment: Experiment
+      try { experiment = await getExperiment(id) }
+      catch (error) {
+        if (!isAxiosError(error) || error.response?.status !== 404) throw error
+        return { id, experiment_no: `实验 #${id}（已不存在）`, model_name: '', project_id: 0,
+          project_name: '', batch_id: 0, batch_name: '', missing: true }
+      }
+      if (!batchCache.has(experiment.batch_id)) batchCache.set(experiment.batch_id, getBatch(experiment.batch_id))
+      const batch = await batchCache.get(experiment.batch_id)!
+      return { id, experiment_no: experiment.experiment_no, model_name: experiment.model_name,
+        project_id: batch.project_id, project_name: projectList.find(item => item.id === batch.project_id)?.name ?? `项目 #${batch.project_id}`,
+        batch_id: batch.id, batch_name: batch.name }
+    }))
+    if (request !== restoreRequest) return
+    selectedExperiments.value = restored
+    baselineId.value = baseline
+    if (restored.some(item => item.missing)) compareError.value = '部分已选实验已不存在，请移除后重新比较。'
+    else if (ids.length >= 2) await refreshComparison(false)
+  } catch (error) {
+    if (request === restoreRequest) compareError.value = getApiErrorMessage(error, '已选实验加载失败，请刷新页面重试。')
+  } finally { if (request === restoreRequest) restoring.value = false }
+}
+
+watch(() => [route.query.ids, route.query.baseline], () => { void restoreSelection() }, { immediate: true })
 
 function startComparison(): void { void refreshComparison(false) }
 
@@ -374,7 +430,7 @@ onMounted(() => {
   document.addEventListener('visibilitychange', checkLatest)
 })
 onBeforeUnmount(() => {
-  disposed = true; exportVersion += 1
+  disposed = true; exportVersion += 1; restoreRequest += 1
   projectRequest += 1; batchRequest += 1; experimentRequest += 1; compareRequest += 1
   compareAbort?.abort()
   autoRefresh.dispose()
@@ -386,6 +442,7 @@ onBeforeUnmount(() => {
 
 <template>
   <section class="page-heading"><h1>实验比较</h1><p>比较系统指标及项目自定义指标。↑ 越大越好，↓ 越小越好；自定义指标按所属项目分别比较。</p></section>
+  <el-dialog v-model="candidateOpen" title="添加实验" width="min(1000px, 94vw)">
   <el-card shadow="never" class="comparison-card">
     <template #header><div class="card-header"><h2>候选实验</h2>
       <div class="card-actions">
@@ -434,14 +491,18 @@ onBeforeUnmount(() => {
     </template>
   </el-card>
 
+  <template #footer><el-button @click="candidateOpen = false">完成选择</el-button></template>
+  </el-dialog>
+
   <el-card shadow="never" class="comparison-card">
     <template #header><div class="card-header"><h2>已选实验（{{ selectedExperiments.length }}）</h2>
       <div class="card-actions">
+        <el-button :disabled="comparisonBusy" @click="candidateOpen = true">添加实验</el-button>
         <el-button :disabled="comparisonBusy || selectedExperiments.length === 0" @click="clearSelection">清空选择</el-button>
         <el-button type="primary" :loading="compareLoading" :disabled="comparisonBusy || selectedExperiments.length < 2" @click="startComparison">{{ comparisonResult ? '重新比较' : '开始比较' }}</el-button>
       </div>
     </div></template>
-    <el-empty v-if="selectedExperiments.length === 0" description="请从上方候选实验中加入需要比较的实验。" />
+    <el-empty v-if="selectedExperiments.length === 0" description="点击“添加实验”，或从项目工作区勾选实验后进入比较。" />
     <template v-else>
       <p v-if="selectedExperiments.length === 1" class="hint">还需至少选择 1 个实验。</p>
       <div class="baseline-selector">
@@ -451,13 +512,14 @@ onBeforeUnmount(() => {
         </el-select>
         <p class="hint">选择后点击开始比较。差值为当前实验减基准，按指标方向判断改善或退步；缺失值不补 0。</p>
       </div>
-      <el-table :data="selectedExperiments" row-key="id" aria-label="已选实验列表">
-        <el-table-column label="实验编号" min-width="160" show-overflow-tooltip><template #default="{ row }"><div class="metric-cell">{{ row.experiment_no }}<el-tag v-if="row.id === baselineId" type="warning" size="small">基准</el-tag></div></template></el-table-column>
-        <el-table-column prop="model_name" label="模型名称" min-width="140" show-overflow-tooltip />
-        <el-table-column prop="project_name" label="项目" min-width="180" show-overflow-tooltip />
-        <el-table-column prop="batch_name" label="批次" min-width="180" show-overflow-tooltip />
-        <el-table-column label="操作" width="90"><template #default="{ row }"><el-button link type="danger" :disabled="comparisonBusy" @click="removeExperiment(row.id)">移除</el-button></template></el-table-column>
-      </el-table>
+      <div class="selected-list" aria-label="已选实验列表" v-loading="restoring">
+        <el-tag v-for="experiment in selectedExperiments" :key="experiment.id" size="large"
+          :type="experiment.missing ? 'danger' : experiment.id === baselineId ? 'warning' : 'info'"
+          :closable="!comparisonBusy" :title="`${experiment.project_name} / ${experiment.batch_name} / ${experiment.model_name}`"
+          @close="removeExperiment(experiment.id)">
+          {{ experiment.experiment_no }}{{ experiment.id === baselineId ? ' · 基准' : '' }}
+        </el-tag>
+      </div>
     </template>
   </el-card>
 
@@ -523,6 +585,8 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
+.selected-list { display: flex; flex-wrap: wrap; gap: 8px; }
+.selected-list .el-tag { max-width: 100%; height: auto; min-height: 32px; white-space: normal; overflow-wrap: anywhere; }
 .hint { color: #6b7280; line-height: 1.7; }
 .result-heading { display: flex; align-items: center; gap: 8px; }
 .help-button { color: #6b7280; font-weight: 600; }
