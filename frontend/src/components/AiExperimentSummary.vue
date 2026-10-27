@@ -136,7 +136,6 @@ onBeforeUnmount(() => {
 <template>
   <el-card shadow="never" class="comparison-card ai-summary-card">
     <template #header><div class="card-header"><h2>AI 实验总结</h2><el-button :disabled="!!scopeError || busy" @click="openSetup">{{ summary ? '重新预览并生成' : '预览 AI 总结' }}</el-button></div></template>
-    <p class="hint">DeepSeek 根据你确认的指标和参数解释实验，图表仍使用真实数据。仅点击“发送并生成”时调用模型。</p>
     <p v-if="scopeError" class="hint">{{ scopeError }}</p>
     <template v-if="summary">
       <el-alert v-if="stale || summary.stale" title="此总结已过期或尚未确认最新，请重新预览生成。下方内容对应原快照。" type="warning" :closable="false" show-icon />

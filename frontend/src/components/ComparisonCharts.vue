@@ -14,7 +14,7 @@ import type { ChartExportSpec, ChartExportTarget } from '../utils/chart-export-l
 use([BarChart, GridComponent, LegendComponent, TooltipComponent, CanvasRenderer])
 
 type ChartOption = ComposeOption<BarSeriesOption | GridComponentOption | LegendComponentOption | TooltipComponentOption>
-const props = defineProps<{ result: ExperimentCompareResponse; exportDisabled?: boolean }>()
+const props = defineProps<{ result: ExperimentCompareResponse; exportDisabled?: boolean; active?: boolean }>()
 const emit = defineEmits<{ 'export-chart': [target: ChartExportTarget] }>()
 const comprehensiveMetrics: { key: MetricName; label: string }[] = [
   { key: 'accuracy', label: 'Accuracy' }, { key: 'precision', label: 'Precision' },
@@ -111,7 +111,7 @@ defineExpose({ getExportSpec })
 
 async function renderCharts(): Promise<void> {
   await nextTick()
-  if (!mounted) return
+  if (!mounted || props.active === false) return
   if (hasComprehensiveData.value && comprehensiveContainer.value) {
     comprehensiveChart ??= init(comprehensiveContainer.value)
     comprehensiveChart.setOption(option(comprehensiveMetrics, true, comprehensiveChart), { notMerge: true })
@@ -123,7 +123,7 @@ async function renderCharts(): Promise<void> {
   resizeCharts()
 }
 
-watch(() => props.result, renderCharts, { flush: 'post' })
+watch(() => [props.result, props.active], renderCharts, { flush: 'post' })
 onMounted(() => {
   mounted = true
   observer = new ResizeObserver(resizeCharts)

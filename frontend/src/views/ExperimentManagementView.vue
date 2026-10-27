@@ -42,14 +42,10 @@ const detailOpen = ref(false)
 const batchManagerOpen = ref(false)
 const metricManagerOpen = ref(false)
 const settingsBusy = ref(false)
-const importTargetOpen = ref(false)
-const importBatchId = ref<number | null>(null)
-const importBatchName = computed(() => batches.value.find(item => item.id === importBatchId.value)?.name)
 const selectedProject = computed(() => projects.value.find(item => item.id === projectId.value))
 const contextError = ref('')
 let loadedProjectId: number | null = null
 function batchName(id: number): string { return batches.value.find(item => item.id === id)?.name ?? `批次 #${id}` }
-function openImport(): void { importBatchId.value = batchId.value; importTargetOpen.value = true }
 const projectId = ref<number | null>(null)
 const batchId = ref<number | null>(null)
 const selectedExperiment = ref<Experiment | null>(null)
@@ -230,13 +226,13 @@ function queryId(value: unknown): number | null {
 async function initializeContext(force = false): Promise<void> {
   const requestedProject = queryId(route.query.projectId)
   const requestedBatch = queryId(route.query.batchId)
-  if (!force && requestedProject !== null && requestedProject === loadedProjectId) {
+  const request = ++contextRequest
+  if (!force && !projectsLoading.value && requestedProject !== null && requestedProject === loadedProjectId && requestedProject === projectId.value) {
     batchId.value = requestedBatch !== null && batches.value.some(item => item.id === requestedBatch) ? requestedBatch : null
     contextError.value = route.query.batchId && batchId.value === null ? '指定批次不存在或不属于当前项目，已显示全部实验。' : ''
     return
   }
-  const request = ++contextRequest
-  if (requestedProject !== loadedProjectId) { checkedIds.value = []; clearBatches() }
+  if (requestedProject !== loadedProjectId || requestedProject !== projectId.value) { checkedIds.value = []; clearBatches() }
   projectsLoading.value = true
   projectsError.value = ''; contextError.value = ''
   try {
@@ -517,7 +513,7 @@ onBeforeUnmount(() => { contextRequest += 1; batchRequest += 1; experimentReques
       <div class="card-header">
         <h2>{{ selectedBatch ? selectedBatch.name : '全部批次' }} · 实验（{{ visibleExperiments.length }}）</h2>
         <div class="card-actions">
-          <el-button :disabled="!projectId || !batches.length || busy || experimentsLoading" @click="openImport">批量导入 JSON</el-button>
+          <ExperimentImport :project-id="projectId" :batch-id="batchId" :batch-name="selectedBatch?.name" :batches="batches" :disabled="busy || experimentsLoading || projectsLoading" @busy="importBusy = $event" @imported="loadExperiments" />
           <el-button :disabled="busy || projectsLoading || experimentsLoading || checkedIds.length < 2" @click="compareChecked">比较所选实验（{{ checkedIds.length }}）</el-button>
           <el-button :loading="experimentsLoading" :disabled="!projectId || busy" @click="loadExperiments">刷新实验</el-button>
           <el-button type="primary" :disabled="!projectId || !batches.length || busy || projectsLoading || experimentsLoading" @click="openExperimentDialog()">新建实验</el-button>
@@ -537,10 +533,6 @@ onBeforeUnmount(() => { contextRequest += 1; batchRequest += 1; experimentReques
       <el-table-column prop="experiment_no" label="实验编号" min-width="140" show-overflow-tooltip />
       <el-table-column label="批次" min-width="160" show-overflow-tooltip><template #default="{ row }">{{ batchName(row.batch_id) }}</template></el-table-column>
       <el-table-column prop="model_name" label="模型名称" min-width="150" show-overflow-tooltip />
-      <el-table-column label="参数" min-width="200" show-overflow-tooltip>
-        <template #default="{ row }">{{ JSON.stringify(row.parameters) }}</template>
-      </el-table-column>
-      <el-table-column label="备注" min-width="120" show-overflow-tooltip><template #default="{ row }">{{ row.notes ?? '-' }}</template></el-table-column>
       <el-table-column label="创建时间" width="180"><template #default="{ row }">{{ formatDateTime(row.created_at) }}</template></el-table-column>
       <el-table-column label="操作" width="290">
         <template #default="{ row }">
@@ -590,10 +582,6 @@ onBeforeUnmount(() => { contextRequest += 1; batchRequest += 1; experimentReques
   </el-dialog>
   <el-dialog v-model="metricManagerOpen" title="管理项目指标" width="min(1100px, 96vw)" :close-on-click-modal="!settingsBusy" :close-on-press-escape="!settingsBusy" :show-close="!settingsBusy" @closed="loadMetricDefinitions">
     <ProjectMetrics v-if="metricManagerOpen" :project-id="projectId" :project-name="selectedProject?.name" @busy="settingsBusy = $event" />
-  </el-dialog>
-  <el-dialog v-model="importTargetOpen" title="选择导入批次" width="min(520px, 92vw)" :close-on-click-modal="!importBusy" :close-on-press-escape="!importBusy" :show-close="!importBusy">
-    <el-form label-position="top"><el-form-item label="目标批次"><el-select v-model="importBatchId" aria-label="导入目标批次" :disabled="importBusy" placeholder="请选择批次"><el-option v-for="batch in batches" :key="batch.id" :value="batch.id" :label="batch.name" /></el-select></el-form-item></el-form>
-    <ExperimentImport :project-id="projectId" :batch-id="importBatchId" :batch-name="importBatchName" @busy="importBusy = $event" @imported="loadExperiments" />
   </el-dialog>
 
   <el-dialog v-model="experimentDialogVisible" :title="copyingFrom ? '复制实验配置' : experimentEditingId === null ? '新建实验' : '编辑实验'" width="min(600px, 92vw)"

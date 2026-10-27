@@ -2,14 +2,17 @@
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import type { UploadFile } from 'element-plus'
+import type { ExperimentBatch } from '../api/batches'
 import { confirmImport, getImportTemplate, previewImport } from '../api/imports'
 import type { ImportDocument, ImportPreview } from '../api/imports'
 import { getApiErrorMessage } from '../api/errors'
 import { downloadJson, MAX_JSON_BYTES, parseJsonText, readJsonFile } from '../utils/json-files'
 
-const props = defineProps<{ projectId: number | null; batchId: number | null; batchName?: string; disabled?: boolean }>()
+const props = defineProps<{ projectId: number | null; batchId: number | null; batchName?: string; batches?: ExperimentBatch[]; disabled?: boolean }>()
 const emit = defineEmits<{ imported: [] ; busy: [value: boolean] }>()
 const visible = ref(false)
+const targetBatchId = ref<number | null>(null)
+const targetBatchName = computed(() => props.batches?.find(item => item.id === targetBatchId.value)?.name ?? props.batchName ?? '选择目标批次')
 const draft = ref('')
 const filename = ref('')
 const error = ref('')
@@ -32,6 +35,7 @@ watch(() => [props.projectId, props.batchId], () => {
   revision += 1; readRequest += 1; visible.value = false; draft.value = ''; filename.value = ''; editingRow.value = null
   preview.value = null; validatedDocument.value = null
 })
+watch(targetBatchId, () => { revision += 1; preview.value = null; validatedDocument.value = null; editingRow.value = null; error.value = '' })
 onBeforeUnmount(() => { revision += 1; readRequest += 1 })
 
 function parse(): ImportDocument {
@@ -45,7 +49,8 @@ function parse(): ImportDocument {
 }
 
 function open(): void {
-  if (props.batchId === null || props.disabled || busy.value) return
+  if (props.projectId === null || props.disabled || busy.value) return
+  targetBatchId.value = props.batchId
   visible.value = true
 }
 
@@ -76,17 +81,17 @@ async function exportTemplate(): Promise<void> {
 }
 
 async function check(): Promise<void> {
-  if (props.batchId === null || busy.value) return
+  if (targetBatchId.value === null || busy.value) return
   preview.value = null
   validatedDocument.value = null
   error.value = ''
   loading.value = true
-  const target = props.batchId
+  const target = targetBatchId.value
   const current = revision
   try {
     const document = parse()
     const response = await previewImport(target, document)
-    if (current !== revision || target !== props.batchId) return
+    if (current !== revision || target !== targetBatchId.value) return
     preview.value = response
     if (response.can_import) validatedDocument.value = document
   } catch (exception) {
@@ -115,10 +120,10 @@ function applyRow(): void {
 }
 
 async function save(): Promise<void> {
-  if (props.batchId === null || busy.value || !validatedDocument.value || !preview.value?.can_import) return
+  if (targetBatchId.value === null || busy.value || !validatedDocument.value || !preview.value?.can_import) return
   saving.value = true
   error.value = ''
-  const target = props.batchId
+  const target = targetBatchId.value
   const document = validatedDocument.value
   try {
     const created = await confirmImport(target, document)
@@ -137,10 +142,11 @@ async function save(): Promise<void> {
 </script>
 
 <template>
-  <el-button :disabled="batchId === null || disabled || busy" @click="open">批量导入 JSON</el-button>
-  <el-dialog v-model="visible" :title="`批量导入 / ${batchName ?? '当前批次'}`" width="min(920px,94vw)" top="4vh"
+  <el-button :disabled="projectId === null || (!batchId && !batches?.length) || disabled || busy" @click="open">批量导入 JSON</el-button>
+  <el-dialog v-model="visible" :title="`批量导入 / ${targetBatchName}`" width="min(920px,94vw)" top="4vh"
              :close-on-click-modal="!busy" :close-on-press-escape="!busy" :show-close="!busy">
-    <p class="hint">只新增到当前批次，不覆盖已有实验。最多 100 条、1 MiB；预览不保存，确认时重新校验，整批成功才保存。result 为 null 或省略表示暂不录入结果。</p>
+    <el-form v-if="batches" label-position="top"><el-form-item label="目标批次（必选）"><el-select v-model="targetBatchId" aria-label="导入目标批次" :disabled="busy" placeholder="请选择批次"><el-option v-for="batch in batches" :key="batch.id" :value="batch.id" :label="batch.name" /></el-select></el-form-item></el-form>
+    <p class="hint">只新增到目标批次，不覆盖已有实验。最多 100 条、1 MiB；预览不保存，确认时重新校验，整批成功才保存。result 为 null 或省略表示暂不录入结果。</p>
     <p class="hint">模板中的空指标为占位：请填入至少一项真实数值，或将 result 改为 null。指标定义只作核对，不会自动创建或修改项目指标。</p>
     <el-button :loading="exporting" :disabled="busy" @click="exportTemplate">下载当前项目模板</el-button>
     <el-upload drag accept=".json,application/json" :auto-upload="false" :show-file-list="false" :disabled="busy" :on-change="readFile">
@@ -150,7 +156,7 @@ async function save(): Promise<void> {
     <label for="import-json">导入草稿（可粘贴或修改）</label>
     <el-input id="import-json" v-model="draft" aria-label="批量导入 JSON" type="textarea" :rows="9" :disabled="busy" placeholder='{"experiments":[{"experiment_no":"EXP-NEW","model_name":"模型名称","parameters":{"seed":42},"result":{"accuracy":0.86}}]}' />
     <el-alert v-if="error" :title="error" type="error" :closable="false" show-icon />
-    <el-button class="preview-button" type="primary" :disabled="!draft.trim() || busy" :loading="loading" @click="check">校验并预览</el-button>
+    <el-button class="preview-button" type="primary" :disabled="targetBatchId === null || !draft.trim() || busy" :loading="loading" @click="check">校验并预览</el-button>
     <template v-if="preview">
       <el-alert :title="`共 ${preview.total} 条，${preview.valid_count} 条有效；${preview.can_import ? '核对后可确认导入' : '请修正错误后重新预览'}`" :type="preview.can_import ? 'success' : 'warning'" :closable="false" />
       <el-table :data="preview.rows" aria-label="导入预览列表" max-height="320">

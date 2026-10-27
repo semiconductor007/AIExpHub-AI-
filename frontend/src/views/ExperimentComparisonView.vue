@@ -42,6 +42,7 @@ interface SelectedExperiment {
 const router = useRouter()
 const route = useRoute()
 const candidateOpen = ref(false)
+const analysisTab = ref('table')
 const restoring = ref(false)
 let restoreRequest = 0
 const projects = ref<Project[]>([])
@@ -247,12 +248,17 @@ async function restoreSelection(): Promise<void> {
   const request = ++restoreRequest
   let ids: number[]
   try { ids = comparisonIds(route.query.ids) }
-  catch (error) { clearComparison(); compareError.value = (error as Error).message; return }
+  catch (error) {
+    clearComparison(); restoring.value = true; selectedExperiments.value = []; baselineId.value = null
+    restoring.value = false; compareError.value = (error as Error).message; return
+  }
   const baseline = typeof route.query.baseline === 'string' && /^[1-9]\d*$/.test(route.query.baseline)
     && ids.includes(Number(route.query.baseline)) ? Number(route.query.baseline) : null
-  if (ids.join(',') === selectedExperiments.value.map(item => item.id).join(',') && baseline === baselineId.value) return
+  if (ids.join(',') === selectedExperiments.value.map(item => item.id).join(',') && baseline === baselineId.value && !restoring.value) return
   clearComparison()
   restoring.value = true
+  selectedExperiments.value = []
+  baselineId.value = null
   try {
     const projectList = await getProjects()
     if (request !== restoreRequest) return
@@ -441,7 +447,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <section class="page-heading"><h1>实验比较</h1><p>比较系统指标及项目自定义指标。↑ 越大越好，↓ 越小越好；自定义指标按所属项目分别比较。</p></section>
+  <section class="page-heading"><h1>实验比较</h1></section>
   <el-dialog v-model="candidateOpen" title="添加实验" width="min(1000px, 94vw)">
   <el-card shadow="never" class="comparison-card">
     <template #header><div class="card-header"><h2>候选实验</h2>
@@ -510,7 +516,7 @@ onBeforeUnmount(() => {
         <el-select id="compare-baseline" v-model="baselineId" aria-label="基准实验" clearable :value-on-clear="null" :disabled="comparisonBusy" placeholder="不选择基准，只比较原始指标">
           <el-option v-for="experiment in selectedExperiments" :key="experiment.id" :value="experiment.id" :label="`${experiment.experiment_no} / ${experiment.project_name}`" />
         </el-select>
-        <p class="hint">选择后点击开始比较。差值为当前实验减基准，按指标方向判断改善或退步；缺失值不补 0。</p>
+
       </div>
       <div class="selected-list" aria-label="已选实验列表" v-loading="restoring">
         <el-tag v-for="experiment in selectedExperiments" :key="experiment.id" size="large"
@@ -530,22 +536,27 @@ onBeforeUnmount(() => {
           <template #reference><el-button class="help-button" circle size="small" aria-label="查看比较与导出说明" @keydown.esc.stop="comparisonHelpOpen = false">?</el-button></template>
           <div class="comparison-help">
             <p>开始比较后，相关数据更新或切回本页时会自动刷新，也可点击“重新比较”。</p>
+            <p>↑ 越大越好，↓ 越小越好；自定义指标按所属项目分别比较，缺失值不补 0。</p>
+            <p>选择基准后重新比较。差值为当前实验减基准，按指标方向判断改善或退步。</p>
             <p>最近获取：{{ lastUpdatedLabel }}</p>
             <p>导出前会刷新数据。CSV 包含原始指标、最佳结果及已选基准的差值；图表可分别导出 PNG。</p>
           </div>
         </el-popover>
       </div>
-      <el-button :loading="exporting" :disabled="comparisonBusy || !comparisonResult" @click="exportComparison()">导出比较表 CSV</el-button>
+
     </div></template>
     <p v-if="syncStatus" class="hint" role="status" aria-label="比较同步状态" aria-live="polite">{{ syncStatus }}</p>
     <p v-if="exporting" class="hint" role="status" aria-live="polite">正在刷新并生成导出文件，请稍候…</p>
     <el-alert v-if="exportError" :title="exportError" type="error" :closable="false" show-icon />
     <div v-loading="compareLoading" class="result-content">
       <el-alert v-if="compareError" :title="compareError" type="error" :closable="false" show-icon />
+      <el-button v-if="compareError && route.query.ids && selectedExperiments.length === 0" :disabled="comparisonBusy" @click="restoreSelection">重新加载已选实验</el-button>
       <el-empty v-if="!comparisonResult && !compareError" description="选择至少两个实验后开始比较。" />
-      <template v-if="comparisonResult">
-        <p v-if="baselineExperiment" class="hint baseline-summary">相对基准：{{ baselineExperiment.experiment_no }}。表格保留原始指标，并显示绝对差值和状态；图表仍展示原始数值。</p>
-        <el-alert v-if="baselineExperiment && isCrossProject" title="系统指标的跨项目差值仅作数值对照，请确认评测条件一致；自定义指标只在所属项目内计算差值。" type="info" :closable="false" show-icon />
+      <el-alert v-if="baselineExperiment && isCrossProject" title="系统指标的跨项目差值仅作数值对照，请确认评测条件一致；自定义指标只在所属项目内计算差值。" type="info" :closable="false" show-icon />
+      <el-tabs v-model="analysisTab" class="analysis-tabs">
+        <el-tab-pane label="指标表格" name="table">
+          <template v-if="comparisonResult">
+            <div class="table-toolbar"><span>{{ baselineExperiment ? `基准：${baselineExperiment.experiment_no}` : '原始指标' }}</span><el-button :loading="exporting" :disabled="comparisonBusy" @click="exportComparison()">导出比较表 CSV</el-button></div>
         <ul class="best-summary" aria-label="最佳指标摘要">
           <li v-for="metric in metrics" :key="metric.key">
             <span>{{ metric.label }}：</span>
@@ -576,15 +587,25 @@ onBeforeUnmount(() => {
           </el-table-column>
           <el-table-column label="结果状态" width="110"><template #default="{ row }"><el-tag :type="row.result === null ? 'info' : 'success'" size="small">{{ row.result === null ? '未录入结果' : '已录入结果' }}</el-tag></template></el-table-column>
         </el-table>
-        <ComparisonCharts v-if="showBuiltinCharts" ref="builtinCharts" :result="comparisonResult" :export-disabled="comparisonBusy" @export-chart="exportComparison" />
-        <CustomMetricChart v-for="metric in comparisonResult.custom_metrics ?? []" :key="`${metric.definition.project_id}:${metric.definition.key}`" ref="customCharts" :metric="metric" :experiments="comparisonResult.experiments" :export-disabled="comparisonBusy" @export-chart="exportComparison" />
-      </template>
+          </template>
+        </el-tab-pane>
+        <el-tab-pane label="可视化" name="charts" lazy>
+          <template v-if="comparisonResult">
+        <ComparisonCharts v-if="showBuiltinCharts" ref="builtinCharts" :result="comparisonResult" :active="analysisTab === 'charts'" :export-disabled="comparisonBusy" @export-chart="exportComparison" />
+        <CustomMetricChart v-for="metric in comparisonResult.custom_metrics ?? []" :key="`${metric.definition.project_id}:${metric.definition.key}`" ref="customCharts" :metric="metric" :active="analysisTab === 'charts'" :experiments="comparisonResult.experiments" :export-disabled="comparisonBusy" @export-chart="exportComparison" />
+          </template>
+        </el-tab-pane>
+        <el-tab-pane label="AI 总结" name="ai" lazy>
+          <AiExperimentSummary :experiments="selectedExperiments" :baseline-id="baselineId" :comparison-updated-at="lastUpdated" />
+        </el-tab-pane>
+      </el-tabs>
     </div>
   </el-card>
-  <AiExperimentSummary :experiments="selectedExperiments" :baseline-id="baselineId" :comparison-updated-at="lastUpdated" />
 </template>
 
 <style scoped>
+.table-toolbar { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 12px; margin: 8px 0 20px; }
+.analysis-tabs { margin-top: 12px; }
 .selected-list { display: flex; flex-wrap: wrap; gap: 8px; }
 .selected-list .el-tag { max-width: 100%; height: auto; min-height: 32px; white-space: normal; overflow-wrap: anywhere; }
 .hint { color: #6b7280; line-height: 1.7; }

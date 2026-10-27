@@ -10,7 +10,7 @@ import { metricLabel } from '../api/metrics'
 import type { ChartExportSpec, ChartExportTarget } from '../utils/chart-export-layout'
 
 use([BarChart, GridComponent, TooltipComponent, CanvasRenderer])
-const props = defineProps<{ metric: CustomMetricComparison; experiments: ComparisonExperiment[]; exportDisabled?: boolean }>()
+const props = defineProps<{ metric: CustomMetricComparison; experiments: ComparisonExperiment[]; exportDisabled?: boolean; active?: boolean }>()
 const emit = defineEmits<{ 'export-chart': [target: ChartExportTarget] }>()
 const experiments = computed(() => props.experiments.filter(item => item.project_id === props.metric.definition.project_id))
 const hasData = computed(() => experiments.value.some(item => props.metric.values[item.id] != null))
@@ -48,14 +48,14 @@ defineExpose({ getExportSpec })
 
 async function render(): Promise<void> {
   await nextTick()
-  if (!mounted || !container.value) return
+  if (!mounted || !container.value || props.active === false) return
   if (!hasData.value) { chart?.clear(); return }
   chart ??= init(container.value)
   chart.setOption(chartOption(), { notMerge: true })
   chart.resize()
 }
 
-watch(() => [props.metric, props.experiments], render, { flush: 'post' })
+watch(() => [props.metric, props.experiments, props.active], render, { flush: 'post' })
 onMounted(() => {
   mounted = true
   observer = new ResizeObserver(() => { if (container.value?.clientWidth && hasData.value) chart?.resize() })

@@ -8,6 +8,8 @@
 
 本地地址：`http://127.0.0.1:8000`。Swagger：`/docs`，OpenAPI：`/openapi.json`。Swagger 标签为 Health、Projects、Experiment Batches、Experiments、Experiment Results、Experiment Comparison。
 
+2026-10-27 项目工作区增加只读 `GET /projects/{project_id}/experiments`，汇总本项目全部批次实验，沿用 ExperimentRead 并按 ID 升序；无记录返回 `[]`，项目不存在返回 404。页面与链接说明见 [项目工作区与比较流程](workspace-navigation.md)。
+
 ## 接口列表
 
 | 方法 | 路径 | 用途 | 成功状态码 | 主要失败状态码 |
@@ -20,6 +22,7 @@
 | DELETE | `/projects/{project_id}` | 删除没有批次的项目 | 204，无响应 Body | 404：项目不存在；409：存在批次或删除冲突；422：路径参数非法 |
 | POST | `/projects/{project_id}/batches` | 在指定项目下创建批次 | 201 | 404：项目不存在；409：数据库写入冲突；422：输入非法 |
 | GET | `/projects/{project_id}/batches` | 获取指定项目的批次数组，按 id ASC 返回 | 200 | 404：项目不存在；422：路径参数非法 |
+| GET | `/projects/{project_id}/experiments` | 获取项目下全部批次的实验，按 id ASC 返回 | 200 | 404：项目不存在；422：路径参数非法 |
 | GET | `/batches/{batch_id}` | 获取批次详情 | 200 | 404：批次不存在；422：路径参数非法 |
 | PUT | `/batches/{batch_id}` | 完整更新批次名称与说明 | 200 | 404、409、422 |
 | DELETE | `/batches/{batch_id}` | 删除没有实验的批次 | 204，无响应 Body | 404：批次不存在；409：存在实验或删除冲突；422：路径参数非法 |
