@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { nextTick, onMounted, reactive, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { nextTick, onMounted, reactive, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
 import { createProject, deleteProject, getProjects, updateProject } from '../api/projects'
@@ -9,6 +9,8 @@ import { getApiErrorMessage } from '../api/errors'
 import { formatDateTime } from '../utils/datetime'
 
 const router = useRouter()
+const route = useRoute()
+const continueAction = ref<'new-experiment' | 'manage-batches' | ''>('')
 const projects = ref<Project[]>([])
 const loading = ref(false)
 const busy = ref(false)
@@ -26,6 +28,7 @@ async function load(): Promise<void> {
   finally { loading.value = false }
 }
 async function open(project?: Project): Promise<void> {
+  continueAction.value = ''
   editing.value = project?.id ?? null
   form.name = project?.name ?? ''; form.description = project?.description ?? ''
   dialog.value = true
@@ -36,9 +39,11 @@ async function save(): Promise<void> {
   busy.value = true
   try {
     const payload = { name: form.name.trim(), description: form.description || null }
-    if (editing.value === null) await createProject(payload)
-    else await updateProject(editing.value, payload)
+    const saved = editing.value === null ? await createProject(payload) : await updateProject(editing.value, payload)
+    const nextAction = continueAction.value
+    continueAction.value = ''
     dialog.value = false; ElMessage.success('项目已保存'); await load()
+    if (nextAction) await router.push({ path: '/experiments', query: { projectId: saved.id, action: nextAction } })
   } catch (exception) { ElMessage.error(getApiErrorMessage(exception)) }
   finally { busy.value = false }
 }
@@ -52,6 +57,14 @@ async function remove(project: Project): Promise<void> {
   finally { busy.value = false }
 }
 onMounted(load)
+watch(() => route.query.action, async action => {
+  if (action !== 'create') return
+  const nextAction = route.query.next
+  const query = { ...route.query }; delete query.action; delete query.next
+  await router.replace({ path: route.path, query })
+  await open()
+  continueAction.value = nextAction === 'new-experiment' || nextAction === 'manage-batches' ? nextAction : ''
+}, { immediate: true })
 </script>
 
 <template>
@@ -74,7 +87,8 @@ onMounted(load)
       </template></el-table-column>
     </el-table>
   </el-card>
-  <el-dialog v-model="dialog" :title="editing === null ? '新建项目' : '编辑项目'" width="min(520px, 92vw)" :close-on-click-modal="!busy" :close-on-press-escape="!busy" :show-close="!busy">
+  <el-dialog v-model="dialog" :title="editing === null ? '新建项目' : '编辑项目'" width="min(520px, 92vw)" :close-on-click-modal="!busy" :close-on-press-escape="!busy" :show-close="!busy" @closed="continueAction = ''">
+    <p v-if="continueAction" class="hint">保存项目后，将继续{{ continueAction === 'new-experiment' ? '建立批次并新建实验' : '建立实验批次' }}。</p>
     <el-form ref="formRef" :model="form" :rules="rules" label-position="top" :disabled="busy" @submit.prevent="save">
       <el-form-item label="项目名称" prop="name"><el-input v-model="form.name" aria-label="项目名称" /></el-form-item>
       <el-form-item label="项目说明"><el-input v-model="form.description" type="textarea" :rows="3" aria-label="项目说明" /></el-form-item>

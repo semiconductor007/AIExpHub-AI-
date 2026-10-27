@@ -42,6 +42,9 @@ const detailOpen = ref(false)
 const batchManagerOpen = ref(false)
 const metricManagerOpen = ref(false)
 const settingsBusy = ref(false)
+const batchSetupOpen = ref(false)
+let setupProjectId: number | null = null
+let handlingEntry = false
 const selectedProject = computed(() => projects.value.find(item => item.id === projectId.value))
 const contextError = ref('')
 let loadedProjectId: number | null = null
@@ -196,7 +199,8 @@ async function loadResult(): Promise<void> {
 }
 
 function selectProject(): void {
-  void router.push({ path: '/experiments', query: projectId.value === null ? {} : { projectId: projectId.value } })
+  const action = route.query.action
+  void router.push({ path: '/experiments', query: { ...(projectId.value === null ? {} : { projectId: projectId.value }), ...(action === 'new-experiment' || action === 'manage-batches' ? { action } : {}) } })
 }
 
 function selectBatch(): void {
@@ -464,7 +468,37 @@ async function submitResult(): Promise<void> {
   } finally { resultSubmitting.value = false }
 }
 
-watch(() => [route.query.projectId, route.query.batchId], () => { void initializeContext() }, { immediate: true })
+async function handleEntry(): Promise<void> {
+  const action = route.query.action
+  const target = projectId.value
+  if (handlingEntry || (action !== 'new-experiment' && action !== 'manage-batches') || target === null
+    || target !== queryId(route.query.projectId) || loadedProjectId !== target
+    || projectsLoading.value || batchesLoading.value || projectsError.value || batchesError.value || busy.value) return
+  handlingEntry = true
+  try {
+    const query = { ...route.query }; delete query.action
+    await router.replace({ path: route.path, query })
+    if (projectId.value !== target) return
+    if (action === 'manage-batches') { batchManagerOpen.value = true; return }
+    if (!batches.value.length) { setupProjectId = target; batchSetupOpen.value = true; return }
+    await openExperimentDialog()
+  } finally { handlingEntry = false }
+}
+
+async function continueAfterBatch(batch: ExperimentBatch): Promise<void> {
+  const target = setupProjectId
+  batchSetupOpen.value = false
+  await nextTick()
+  if (target === null || target !== projectId.value || batch.project_id !== target) return
+  // BatchManager finishes its save before the experiment form is opened.
+  await refreshBatches()
+  if (projectId.value !== target || batchesError.value || busy.value) return
+  await openExperimentDialog()
+  experimentBatchId.value = batch.id
+}
+
+watch(() => [route.query.projectId, route.query.batchId], () => { batchSetupOpen.value = false; setupProjectId = null; void initializeContext() }, { immediate: true })
+watch(() => [route.query.action, projectsLoading.value, batchesLoading.value, busy.value, projectId.value], () => { void handleEntry() }, { flush: 'post', immediate: true })
 onBeforeUnmount(() => { contextRequest += 1; batchRequest += 1; experimentRequest += 1; resultRequest += 1; metricRequest += 1 })
 </script>
 
@@ -500,7 +534,7 @@ onBeforeUnmount(() => { contextRequest += 1; batchRequest += 1; experimentReques
     <el-alert v-if="batchesError" :title="batchesError" type="error" :closable="false" show-icon />
     <el-alert v-if="metricsError" :title="metricsError" type="error" :closable="false" show-icon />
     <el-empty v-if="!projectsLoading && !projectsError && projects.length === 0" description="暂无实验项目，请先前往项目管理创建项目。">
-      <el-button @click="router.push('/projects')">前往项目管理</el-button>
+      <el-button @click="router.push({ path: '/projects', query: { action: 'create', ...(route.query.action === 'new-experiment' || route.query.action === 'manage-batches' ? { next: route.query.action } : {}) } })">创建项目</el-button>
     </el-empty>
     <p v-else-if="!projectId" class="hint">请选择实验项目。</p>
     <el-empty v-else-if="!batchesLoading && !batchesError && batches.length === 0" description="当前项目暂无实验批次。">
@@ -577,6 +611,7 @@ onBeforeUnmount(() => { contextRequest += 1; batchRequest += 1; experimentReques
     </div>
   </el-drawer>
 
+  <BatchManager v-if="batchSetupOpen && projectId" :project-id="projectId" :batches="batches" create-on-open @created="continueAfterBatch" @cancelled="batchSetupOpen = false" @busy="settingsBusy = $event" />
   <el-dialog v-model="batchManagerOpen" title="管理批次" width="min(900px, 94vw)" :close-on-click-modal="!settingsBusy" :close-on-press-escape="!settingsBusy" :show-close="!settingsBusy">
     <BatchManager v-if="batchManagerOpen && projectId" :project-id="projectId" :batches="batches" :loading="batchesLoading" :error="batchesError" @changed="refreshBatches" @refresh="refreshBatches" @busy="settingsBusy = $event" />
   </el-dialog>
