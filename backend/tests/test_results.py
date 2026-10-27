@@ -150,7 +150,10 @@ def test_swagger_contains_only_current_endpoints(client):
     response = client.get("/openapi.json")
     assert response.status_code == 200
     paths = response.json()["paths"]
-    assert len(paths) == 16 and sum(len(methods) for methods in paths.values()) == 32
+    assert len(paths) == 20 and sum(len(methods) for methods in paths.values()) == 36
+    assert set(paths["/ai/summaries/status"]) == {"get"}
+    for action in ("preview", "check", "generate"):
+        assert set(paths[f"/ai/summaries/{action}"]) == {"post"}
     assert set(paths['/projects/{project_id}/result-mapping-templates']) == {'get', 'post'}
     assert set(paths['/projects/{project_id}/result-mapping-templates/{template_id}']) == {'put', 'patch', 'delete'}
     assert set(paths["/projects/{project_id}/metrics"]) == {"get", "post"}
@@ -158,4 +161,4 @@ def test_swagger_contains_only_current_endpoints(client):
     assert set(paths["/experiments/{experiment_id}/result"]) == {"post", "get", "put"}
     tags = {tag for methods in paths.values() for operation in methods.values() for tag in operation["tags"]}
     assert set(paths["/experiments/compare"]) == {"post"}
-    assert tags == {"Health", "Projects", "Experiment Batches", "Experiments", "Experiment Results", "Experiment Comparison", "Project Metrics", "Experiment Import", "Result Mapping Templates"}
+    assert tags == {"Health", "Projects", "Experiment Batches", "Experiments", "Experiment Results", "Experiment Comparison", "Project Metrics", "Experiment Import", "Result Mapping Templates", "AI Summaries"}

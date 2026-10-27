@@ -17,6 +17,7 @@ import CustomMetricChart from '../components/CustomMetricChart.vue'
 import { metricLabel } from '../api/metrics'
 import type { CustomMetricComparison } from '../api/compare'
 import MetricDeltaDisplay from '../components/MetricDeltaDisplay.vue'
+import AiExperimentSummary from '../components/AiExperimentSummary.vue'
 import { affectsComparison, subscribeComparisonChanges } from '../utils/comparison-changes'
 import type { ComparisonChange } from '../utils/comparison-changes'
 import { createComparisonRefresh } from '../utils/comparison-refresh'
@@ -506,6 +507,7 @@ onBeforeUnmount(() => {
       </template>
     </div>
   </el-card>
+  <AiExperimentSummary :experiments="selectedExperiments" :baseline-id="baselineId" :comparison-updated-at="lastUpdated" />
 </template>
 
 <style scoped>

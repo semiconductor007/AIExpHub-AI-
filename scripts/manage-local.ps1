@@ -40,7 +40,7 @@ function Assert-Environment {
         }
     }
     # Imports third-party packages only: never import app.main or initialize a DB here.
-    $pythonCode = 'import sys; assert sys.version_info[:2] == (3, 12), "Python 3.12 required"; import fastapi, uvicorn, sqlalchemy, pydantic; assert int(pydantic.__version__.split(".")[0]) == 2, "Pydantic 2 required"; print(sys.version.split()[0])'
+    $pythonCode = 'import sys; assert sys.version_info[:2] == (3, 12), "Python 3.12 required"; import fastapi, uvicorn, sqlalchemy, pydantic, httpx, dotenv; assert int(pydantic.__version__.split(".")[0]) == 2, "Pydantic 2 required"; print(sys.version.split()[0])'
     $encodedPython = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($pythonCode))
     $pythonCheck = Invoke-NativeProbe $python @('-c', "exec(__import__('base64').b64decode('$encodedPython'))")
     if ($pythonCheck.Code -ne 0) {
