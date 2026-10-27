@@ -70,6 +70,7 @@ const compareError = ref('')
 const comparisonStarted = ref(false)
 const dataStale = ref(false)
 const lastUpdated = ref<number | null>(null)
+const comparisonHelpOpen = ref(false)
 const refreshingAutomatically = ref(false)
 let compareAbort: AbortController | undefined
 let unsubscribeChanges: (() => void) | undefined
@@ -82,8 +83,9 @@ const autoRefresh = createComparisonRefresh({
 const syncStatus = computed(() => {
   if (compareLoading.value) return refreshingAutomatically.value ? '正在自动获取最新比较结果…' : '正在获取比较结果…'
   if (comparisonResult.value && dataStale.value) return '下方显示上次成功获取的结果，当前数据尚未确认最新。'
-  return lastUpdated.value === null ? '' : `最近获取：${new Date(lastUpdated.value).toLocaleTimeString('zh-CN', { hour12: false })}`
+  return ''
 })
+const lastUpdatedLabel = computed(() => lastUpdated.value === null ? '尚未获取' : new Date(lastUpdated.value).toLocaleTimeString('zh-CN', { hour12: false }))
 let projectRequest = 0
 let batchRequest = 0
 let experimentRequest = 0
@@ -460,10 +462,20 @@ onBeforeUnmount(() => {
   </el-card>
 
   <el-card shadow="never" class="comparison-card">
-    <template #header><div class="card-header"><h2>比较结果</h2><el-button :loading="exporting" :disabled="comparisonBusy || !comparisonResult" @click="exportComparison()">导出比较表 CSV</el-button></div></template>
-    <p class="hint">首次点击“开始比较”后自动同步：同源标签页保存相关数据或切回本页时检查最新结果。也可点击“重新比较”。</p>
+    <template #header><div class="card-header">
+      <div class="result-heading"><h2>比较结果</h2>
+        <el-popover v-model:visible="comparisonHelpOpen" placement="bottom-start" :width="320" trigger="click" title="比较与导出说明">
+          <template #reference><el-button class="help-button" circle size="small" aria-label="查看比较与导出说明" @keydown.esc.stop="comparisonHelpOpen = false">?</el-button></template>
+          <div class="comparison-help">
+            <p>开始比较后，相关数据更新或切回本页时会自动刷新，也可点击“重新比较”。</p>
+            <p>最近获取：{{ lastUpdatedLabel }}</p>
+            <p>导出前会刷新数据。CSV 包含原始指标、最佳结果及已选基准的差值；图表可分别导出 PNG。</p>
+          </div>
+        </el-popover>
+      </div>
+      <el-button :loading="exporting" :disabled="comparisonBusy || !comparisonResult" @click="exportComparison()">导出比较表 CSV</el-button>
+    </div></template>
     <p v-if="syncStatus" class="hint" role="status" aria-label="比较同步状态" aria-live="polite">{{ syncStatus }}</p>
-    <p class="hint">导出前会获取一次最新比较。CSV 包含原始指标、最佳结果及已选择的基准差值；各图可单独导出 PNG。</p>
     <p v-if="exporting" class="hint" role="status" aria-live="polite">正在刷新并生成导出文件，请稍候…</p>
     <el-alert v-if="exportError" :title="exportError" type="error" :closable="false" show-icon />
     <div v-loading="compareLoading" class="result-content">
@@ -512,6 +524,11 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .hint { color: #6b7280; line-height: 1.7; }
+.result-heading { display: flex; align-items: center; gap: 8px; }
+.help-button { color: #6b7280; font-weight: 600; }
+.comparison-help { line-height: 1.7; overflow-wrap: anywhere; }
+.comparison-help p { margin: 0 0 10px; }
+.comparison-help p:last-child { margin-bottom: 0; }
 .result-content { min-height: 120px; }
 .metric-cell { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .baseline-selector { margin-bottom: 16px; }
